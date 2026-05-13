@@ -1,0 +1,44 @@
+export type Status = 'todo' | 'inprog' | 'done'
+export type Priority = 'high' | 'medium' | 'low'
+export type Tag = 'dev' | 'design' | 'qa' | 'pm'
+
+export interface Task {
+  id: number
+  title: string
+  desc: string
+  status: Status
+  priority: Priority
+  tag: Tag
+  assignee: string
+  due: string | null
+  proj: string
+  created_at: string
+  updated_at: string
+}
+
+export type TaskInput = Omit<Task, 'id' | 'created_at' | 'updated_at'>
+
+export interface Project {
+  name: string
+  slug: string
+  color: string
+}
+
+export interface User {
+  code: string
+  name: string
+  color: string
+}
+
+export type View =
+  | 'dashboard'
+  | 'mytasks'
+  | 'all'
+  | 'overdue'
+  | 'proj-website'
+  | 'proj-backend'
+  | 'proj-mobile'
+  | 'proj-ops'
+
+export type Filter = 'all' | 'todo' | 'inprog' | 'done' | 'high'
+export type SortKey = '' | 'due' | 'priority' | 'status'
