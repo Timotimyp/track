@@ -2,23 +2,44 @@
  * Lightweight hook that surfaces the user's Microsoft account + a cached
  * Graph access token. Returns no-op values when MSAL is not configured.
  *
- * We deliberately do NOT use `useAccount` from msal-react: it expects an
- * `AccountIdentifiers` shape and silently returns `null` when given a full
- * `AccountInfo` (which is what `useMsal().accounts` provides). That mismatch
- * left the UI stuck on the sign-in button even after a successful login.
- * Reading `accounts[0]` directly is reactive — msal-react keeps the list
- * up-to-date via internal event callbacks.
+ * Implementation notes:
+ *
+ * - We do NOT use `useAccount` from msal-react: it expects an
+ *   `AccountIdentifiers` shape, not the full `AccountInfo` that
+ *   `useMsal().accounts` produces. Passing it the wrong shape silently
+ *   returns `null`, which is why the topbar appeared stuck on "Sign in"
+ *   even after a successful login.
+ *
+ * - We also do NOT rely solely on `useMsal().accounts`. In practice that
+ *   array doesn't always propagate into our render cycle in time — there
+ *   are timing gaps between MSAL's internal cache and msal-react's React
+ *   state, especially right after a popup login. Instead we read the
+ *   source of truth ourselves (`instance.getActiveAccount()` with a
+ *   `getAllAccounts()` fallback) and subscribe to **every** MSAL event so
+ *   any cache change triggers a refresh.
  */
-import { EventType } from '@azure/msal-browser'
-import type { AuthenticationResult, EventMessage } from '@azure/msal-browser'
-import { useIsAuthenticated, useMsal } from '@azure/msal-react'
+import {
+  EventType,
+  type AccountInfo,
+  type AuthenticationResult,
+  type EventMessage,
+} from '@azure/msal-browser'
+import { useMsal } from '@azure/msal-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   acquireGraphToken,
   GRAPH_READ_SCOPES,
   GRAPH_WRITE_SCOPES,
   isAzureConfigured,
+  msalInstance,
 } from './auth'
+
+function pickInitialAccount(): AccountInfo | null {
+  if (!isAzureConfigured() || !msalInstance) return null
+  return (
+    msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0] ?? null
+  )
+}
 
 export interface MicrosoftAuthState {
   enabled: boolean
@@ -32,41 +53,53 @@ export interface MicrosoftAuthState {
 
 export function useMicrosoftAuth(): MicrosoftAuthState {
   const enabled = isAzureConfigured()
-  const { instance, accounts } = useMsal()
-  const account = accounts[0] ?? null
-  const isAuthenticated = useIsAuthenticated()
+  const { instance } = useMsal()
+  // Lazy initial state covers cold page loads where MSAL's sessionStorage
+  // already contains an account (so the topbar shows the signed-in state on
+  // first paint, not after a microtask).
+  const [account, setAccount] = useState<AccountInfo | null>(pickInitialAccount)
   const [token, setToken] = useState<string | null>(null)
 
-  // Promote the freshly-signed-in account to "active" so MSAL uses it for
-  // silent token requests across renders. Without this, `acquireTokenSilent`
-  // sometimes fails with `no_account_in_silent_request` immediately after
-  // login.
+  // Keep `account` in sync with MSAL's internal cache via its event bus.
   useEffect(() => {
     if (!enabled) return
-    const id = instance.addEventCallback((event: EventMessage) => {
-      if (
-        event.eventType === EventType.LOGIN_SUCCESS &&
-        event.payload &&
-        'account' in event.payload
-      ) {
-        const result = event.payload as AuthenticationResult
-        if (result.account) instance.setActiveAccount(result.account)
-      }
-    })
-    // If we already have an account on first render (e.g. session storage
-    // restore), promote it now.
-    if (accounts[0] && !instance.getActiveAccount()) {
-      instance.setActiveAccount(accounts[0])
-    }
-    return () => {
-      if (id) instance.removeEventCallback(id)
-    }
-  }, [enabled, instance, accounts])
 
+    function pickAccount(): AccountInfo | null {
+      return instance.getActiveAccount() ?? instance.getAllAccounts()[0] ?? null
+    }
+
+    // Make sure the picked account is also "active" so silent token acquisition
+    // works without prompting the user.
+    const initial = pickAccount()
+    if (initial && !instance.getActiveAccount()) {
+      instance.setActiveAccount(initial)
+    }
+
+    const callbackId = instance.addEventCallback((event: EventMessage) => {
+      // Promote a freshly-acquired account to active so silent token requests
+      // (e.g. for /me/calendarView) succeed without a popup.
+      if (
+        event.eventType === EventType.LOGIN_SUCCESS ||
+        event.eventType === EventType.ACQUIRE_TOKEN_SUCCESS
+      ) {
+        const payload = event.payload as AuthenticationResult | null
+        if (payload?.account) instance.setActiveAccount(payload.account)
+      }
+      if (event.eventType === EventType.LOGOUT_SUCCESS) {
+        instance.setActiveAccount(null)
+      }
+      setAccount(pickAccount())
+    })
+
+    return () => {
+      if (callbackId) instance.removeEventCallback(callbackId)
+    }
+  }, [enabled, instance])
+
+  // Refresh the Graph token when the signed-in account changes.
   useEffect(() => {
     let cancelled = false
     if (!enabled || !account) {
-      // Defer to avoid the React "setState directly in effect" lint warning.
       Promise.resolve().then(() => {
         if (!cancelled) setToken(null)
       })
@@ -86,7 +119,10 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
     if (!enabled) return
     try {
       const result = await instance.loginPopup({ scopes: GRAPH_READ_SCOPES })
-      if (result.account) instance.setActiveAccount(result.account)
+      if (result.account) {
+        instance.setActiveAccount(result.account)
+        setAccount(result.account)
+      }
     } catch (err) {
       console.error('Microsoft sign-in failed', err)
     }
@@ -98,6 +134,8 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
       await instance.logoutPopup()
     } catch (err) {
       console.error('Microsoft sign-out failed', err)
+    } finally {
+      setAccount(null)
     }
   }, [enabled, instance])
 
@@ -105,7 +143,8 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
     async (scopes: string[] = GRAPH_READ_SCOPES) => {
       if (!enabled || !account) return null
       if (scopes === GRAPH_READ_SCOPES && token) return token
-      // Avoid lint warning: GRAPH_WRITE_SCOPES referenced to keep the export used.
+      // Keep GRAPH_WRITE_SCOPES referenced so the export isn't tree-shaken
+      // away when the consumer asks for the write scope.
       void GRAPH_WRITE_SCOPES
       return acquireGraphToken(account, scopes)
     },
@@ -114,7 +153,7 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
 
   return {
     enabled,
-    isSignedIn: enabled && isAuthenticated && !!account,
+    isSignedIn: enabled && !!account,
     username: account?.username ?? null,
     displayName: account?.name ?? account?.username ?? null,
     signIn,
