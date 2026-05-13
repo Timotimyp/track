@@ -1,10 +1,11 @@
 """FastAPI application exposing TaskFlow REST API."""
 from __future__ import annotations
 
+import os
 from contextlib import asynccontextmanager
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
-from fastapi import Depends, FastAPI, HTTPException, status
+from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 
@@ -16,6 +17,7 @@ from app.assistant import (
 )
 from app.conflicts import check_conflict
 from app.db import engine, get_session, init_db
+from app.graph import create_calendar_event
 from app.models import (
     Project,
     Task,
@@ -46,9 +48,13 @@ async def lifespan(_app: FastAPI):
 
 app = FastAPI(title="TaskFlow API", version="1.0.0", lifespan=lifespan)
 
+# CORS_ALLOW_ORIGINS is a comma-separated list of origins. Defaults to "*"
+# for local dev; production should set it to the Static Web App's URL.
+_origins_env = os.getenv("CORS_ALLOW_ORIGINS", "*")
+_origins = [o.strip() for o in _origins_env.split(",") if o.strip()] or ["*"]
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=_origins,
     allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -75,12 +81,49 @@ def list_tasks(session: Session = Depends(get_session)) -> list[Task]:
     return list(session.exec(select(Task).order_by(Task.id)).all())
 
 
+def _extract_bearer(authorization: str | None) -> str | None:
+    if not authorization:
+        return None
+    parts = authorization.split(maxsplit=1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip() or None
+    return None
+
+
 @app.post("/api/tasks", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
-def create_task(payload: TaskCreate, session: Session = Depends(get_session)) -> Task:
+async def create_task(
+    payload: TaskCreate,
+    session: Session = Depends(get_session),
+    add_to_outlook: bool = False,
+    authorization: str | None = Header(default=None),
+) -> Task:
+    """Create a task; optionally mirror it as an Outlook event if a token is supplied.
+
+    `add_to_outlook=true` query parameter combined with a `Authorization:
+    Bearer <graph-token>` header makes the backend create a 1-hour event on
+    the caller's Outlook calendar (subject = task title, body = task desc).
+    Calendar creation is best-effort: failures are swallowed so the task
+    itself is still saved.
+    """
     task = Task(**payload.model_dump())
     session.add(task)
     session.commit()
     session.refresh(task)
+
+    if add_to_outlook and task.due is not None and task.due_time:
+        token = _extract_bearer(authorization)
+        if token:
+            start = datetime.combine(
+                task.due, datetime.strptime(task.due_time, "%H:%M").time(), tzinfo=UTC
+            )
+            end = start + timedelta(minutes=60)
+            await create_calendar_event(
+                token,
+                subject=task.title,
+                body=task.desc or "",
+                start=start,
+                end=end,
+            )
     return task
 
 
@@ -122,19 +165,25 @@ def delete_task(task_id: int, session: Session = Depends(get_session)) -> None:
 async def assistant(
     request: AssistantRequest,
     session: Session = Depends(get_session),
+    authorization: str | None = Header(default=None),
 ) -> AssistantResponse:
     """Parse a free-form voice/text command into a structured task suggestion.
 
-    After Gemini returns a candidate task, we look in the local DB for tasks
-    that occupy the same date + time slot and attach a conflict block to the
-    response. The frontend uses this to warn the user and offer alternatives.
+    After Gemini returns a candidate task, we look in TaskFlow's DB *and* (if
+    a Microsoft Graph access token is forwarded via the Authorization header)
+    in the caller's Outlook calendar for tasks/events occupying the same slot.
+    The conflict block returned to the frontend lists every offender and a
+    few free alternatives.
     """
     today = datetime.now(UTC).date()
     try:
         response = await interpret_command(request, today=today)
     except AssistantError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    response.conflict = check_conflict(
-        session, response.task.due, response.task.due_time
+    response.conflict = await check_conflict(
+        session,
+        response.task.due,
+        response.task.due_time,
+        access_token=_extract_bearer(authorization),
     )
     return response

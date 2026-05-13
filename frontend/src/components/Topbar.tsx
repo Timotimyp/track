@@ -1,4 +1,5 @@
 import { forwardRef } from 'react'
+import type { MicrosoftAuthState } from '../useMicrosoftAuth'
 
 interface TopbarProps {
   title: string
@@ -7,10 +8,11 @@ interface TopbarProps {
   onExport: () => void
   onNewTask: () => void
   onOpenAssistant: () => void
+  ms: MicrosoftAuthState
 }
 
 export const Topbar = forwardRef<HTMLInputElement, TopbarProps>(function Topbar(
-  { title, search, onSearchChange, onExport, onNewTask, onOpenAssistant },
+  { title, search, onSearchChange, onExport, onNewTask, onOpenAssistant, ms },
   ref,
 ) {
   return (
@@ -26,6 +28,28 @@ export const Topbar = forwardRef<HTMLInputElement, TopbarProps>(function Topbar(
           onChange={(e) => onSearchChange(e.target.value)}
         />
       </div>
+      {ms.enabled && (
+        ms.isSignedIn ? (
+          <button
+            className="topbar-btn btn-ms"
+            onClick={ms.signOut}
+            title={ms.username ?? undefined}
+          >
+            <span className="ms-badge" aria-hidden>MS</span>
+            <span className="ms-name">{ms.displayName ?? ms.username}</span>
+            <span className="ms-signout-x" aria-hidden>✕</span>
+          </button>
+        ) : (
+          <button
+            className="topbar-btn btn-ghost"
+            onClick={ms.signIn}
+            title="Sign in with Microsoft to check your Outlook calendar"
+          >
+            <span className="ms-badge" aria-hidden>MS</span>
+            Sign in
+          </button>
+        )
+      )}
       <button
         className="topbar-btn btn-assistant"
         onClick={onOpenAssistant}

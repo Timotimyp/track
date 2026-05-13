@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
-from datetime import date
+from datetime import UTC, date, datetime
 
 import pytest
 from fastapi.testclient import TestClient
@@ -184,11 +184,76 @@ def test_assistant_detects_conflict_and_proposes_alternatives(
     assert len(conflict["conflicts"]) == 1
     assert conflict["conflicts"][0]["title"] == "Sprint planning"
     assert conflict["conflicts"][0]["due_time"] == "15:00"
+    assert conflict["conflicts"][0]["source"] == "taskflow"
+    assert conflict["conflicts"][0]["id"].startswith("taskflow:")
     assert len(conflict["alternatives"]) == 3
     # Same-day shifts come first when free
     alt_keys = [(a["due"], a["due_time"]) for a in conflict["alternatives"]]
     assert ("2026-06-01", "16:00") in alt_keys
     assert ("2026-06-01", "14:00") in alt_keys
+
+
+def test_assistant_merges_outlook_calendar_conflicts(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When an Authorization header is passed, Outlook events also count as conflicts."""
+    import app.conflicts as conflicts_module
+    import app.main as main_module
+    from app.assistant import AssistantResponse, AssistantTask
+    from app.graph import GraphEvent
+
+    async def fake_interpret(request, *, today, **kwargs):  # noqa: ANN001
+        return AssistantResponse(
+            recommendation="Slot looks available.",
+            task=AssistantTask(
+                title="Pair on auth",
+                priority="medium",
+                tag="dev",
+                assignee="YO",
+                due=date(2026, 7, 10),
+                due_time="14:00",
+                proj="Backend API",
+            ),
+        )
+
+    async def fake_calendar_view(token, start, end):  # noqa: ANN001
+        assert token == "graph-token-xyz"
+        return [
+            GraphEvent(
+                id="AAMkAGI2T...",
+                subject="Stakeholder review",
+                start=datetime(2026, 7, 10, 13, 30, tzinfo=UTC),
+                end=datetime(2026, 7, 10, 14, 30, tzinfo=UTC),
+            ),
+            GraphEvent(
+                id="AAMkAGI3T...",
+                subject="Lunch",
+                start=datetime(2026, 7, 10, 16, 0, tzinfo=UTC),
+                end=datetime(2026, 7, 10, 17, 0, tzinfo=UTC),
+            ),
+        ]
+
+    monkeypatch.setattr(main_module, "interpret_command", fake_interpret)
+    monkeypatch.setattr(conflicts_module, "fetch_calendar_view", fake_calendar_view)
+
+    body = client.post(
+        "/api/assistant",
+        json={"text": "schedule pair programming", "language": "en-US"},
+        headers={"Authorization": "Bearer graph-token-xyz"},
+    ).json()
+
+    conflict = body["conflict"]
+    assert conflict is not None
+    # The overlapping Outlook event ("Stakeholder review" 13:30-14:30) clashes.
+    titles = [c["title"] for c in conflict["conflicts"]]
+    assert "Stakeholder review" in titles
+    sources = {c["source"] for c in conflict["conflicts"]}
+    assert "outlook" in sources
+    # 16:00 is occupied by Lunch — must NOT be returned as alternative.
+    alt_keys = [(a["due"], a["due_time"]) for a in conflict["alternatives"]]
+    assert ("2026-07-10", "16:00") not in alt_keys
+    # 15:00 should be free though.
+    assert ("2026-07-10", "15:00") in alt_keys
 
 
 def test_assistant_no_conflict_when_slot_is_free(

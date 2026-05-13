@@ -59,10 +59,11 @@ export interface AssistantTaskSuggestion {
 }
 
 export interface AssistantConflictTask {
-  id: number
+  id: string
   title: string
   due: string
   due_time: string
+  source: 'taskflow' | 'outlook'
 }
 
 export interface AssistantAlternative {

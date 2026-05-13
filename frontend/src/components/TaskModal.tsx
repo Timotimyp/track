@@ -9,8 +9,13 @@ interface TaskModalProps {
   conflict?: AssistantConflict | null
   projects: Project[]
   users: User[]
+  msSignedIn?: boolean
   onClose: () => void
-  onSave: (data: TaskInput, id: number | null) => Promise<void> | void
+  onSave: (
+    data: TaskInput,
+    id: number | null,
+    opts?: { addToOutlook?: boolean },
+  ) => Promise<void> | void
 }
 
 function defaultDate(): string {
@@ -62,12 +67,14 @@ export function TaskModal({
   conflict,
   projects,
   users,
+  msSignedIn,
   onClose,
   onSave,
 }: TaskModalProps) {
   const [form, setForm] = useState<TaskInput>(() => formFromInitial(initial, prefill, projects))
   const [titleError, setTitleError] = useState(false)
   const [conflictDismissed, setConflictDismissed] = useState(false)
+  const [addToOutlook, setAddToOutlook] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
 
   const stillConflicts =
@@ -99,7 +106,11 @@ export function TaskModal({
       return
     }
     setTitleError(false)
-    await onSave({ ...form, title, desc: form.desc.trim() }, initial?.id ?? null)
+    await onSave(
+      { ...form, title, desc: form.desc.trim() },
+      initial?.id ?? null,
+      { addToOutlook: addToOutlook && !!form.due && !!form.due_time },
+    )
   }
 
   return (
@@ -128,6 +139,9 @@ export function TaskModal({
                 <div className="assistant-conflict-body">
                   {conflict.conflicts.map((c) => (
                     <div key={c.id}>
+                      <span className={`assistant-conflict-source assistant-conflict-source-${c.source}`}>
+                        {c.source === 'outlook' ? 'Outlook' : 'TaskFlow'}
+                      </span>{' '}
                       «{c.title}» уже стоит на {formatDate(c.due)} в {formatTime(c.due_time)}
                     </div>
                   ))}
@@ -260,6 +274,24 @@ export function TaskModal({
             ))}
           </select>
         </div>
+        {!initial && msSignedIn && (
+          <label
+            className={`outlook-checkbox ${!form.due || !form.due_time ? 'disabled' : ''}`}
+            title={
+              !form.due || !form.due_time
+                ? 'Set both date and time to add this task to your Outlook calendar'
+                : undefined
+            }
+          >
+            <input
+              type="checkbox"
+              checked={addToOutlook}
+              disabled={!form.due || !form.due_time}
+              onChange={(e) => setAddToOutlook(e.target.checked)}
+            />
+            <span>📅 Also add to my Outlook Calendar</span>
+          </label>
+        )}
         <div className="modal-actions">
           <button className="topbar-btn btn-ghost" onClick={onClose}>
             Cancel

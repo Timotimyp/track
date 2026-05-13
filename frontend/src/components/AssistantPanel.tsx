@@ -1,5 +1,4 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
-import { api } from '../api'
 import {
   type BrowserSpeechRecognition,
   createRecognition,
@@ -12,6 +11,8 @@ interface AssistantPanelProps {
   onClose: () => void
   onSuggestion: (response: AssistantResponse) => void
   onError: (message: string) => void
+  onSubmit: (text: string, language: AssistantLanguage) => Promise<AssistantResponse>
+  msSignedIn?: boolean
 }
 
 type Status = 'idle' | 'listening' | 'thinking' | 'error'
@@ -59,7 +60,13 @@ const STRINGS: Record<AssistantLanguage, Record<string, string>> = {
   },
 }
 
-export function AssistantPanel({ onClose, onSuggestion, onError }: AssistantPanelProps) {
+export function AssistantPanel({
+  onClose,
+  onSuggestion,
+  onError,
+  onSubmit,
+  msSignedIn,
+}: AssistantPanelProps) {
   const [language, setLanguage] = useState<AssistantLanguage>('ru-RU')
   const [status, setStatus] = useState<Status>('idle')
   const [finalText, setFinalText] = useState('')
@@ -132,7 +139,7 @@ export function AssistantPanel({ onClose, onSuggestion, onError }: AssistantPane
     setStatus('thinking')
     setError(null)
     try {
-      const response = await api.askAssistant(text, language)
+      const response = await onSubmit(text, language)
       setStatus('idle')
       onSuggestion(response)
     } catch (err) {
@@ -171,6 +178,11 @@ export function AssistantPanel({ onClose, onSuggestion, onError }: AssistantPane
           </button>
         </div>
         <div className="assistant-subtitle">{t.subtitle}</div>
+        {msSignedIn && (
+          <div className="assistant-outlook-hint">
+            📅 Outlook Calendar подключён — AI учтёт твои встречи при поиске конфликта
+          </div>
+        )}
 
         <div className="assistant-lang-row">
           {(Object.keys(LANG_LABELS) as AssistantLanguage[]).map((code) => (

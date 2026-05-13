@@ -1,5 +1,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
+import { GRAPH_WRITE_SCOPES } from './auth'
+import { useMicrosoftAuth } from './useMicrosoftAuth'
 import { AssistantPanel } from './components/AssistantPanel'
 import { Dashboard } from './components/Dashboard'
 import { Sidebar } from './components/Sidebar'
@@ -26,6 +28,7 @@ interface ToastState {
 }
 
 function App() {
+  const ms = useMicrosoftAuth()
   const [tasks, setTasks] = useState<Task[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [users, setUsers] = useState<User[]>([])
@@ -120,6 +123,11 @@ function App() {
     })
   }
 
+  async function handleAssistantSubmit(text: string, language: 'ru-RU' | 'en-US'): Promise<AssistantResponse> {
+    const token = ms.isSignedIn ? await ms.getToken() : null
+    return api.askAssistant(text, language, token)
+  }
+
   function handleAssistantSuggestion(response: AssistantResponse) {
     const prefill: TaskInput = {
       title: response.task.title,
@@ -142,7 +150,11 @@ function App() {
     })
   }
 
-  async function handleSave(data: TaskInput, id: number | null) {
+  async function handleSave(
+    data: TaskInput,
+    id: number | null,
+    opts: { addToOutlook?: boolean } = {},
+  ) {
     try {
       const payload: TaskInput = {
         ...data,
@@ -154,9 +166,16 @@ function App() {
         setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)))
         showToast('Task updated!')
       } else {
-        const created = await api.createTask(payload)
+        let token: string | null = null
+        if (opts.addToOutlook && ms.isSignedIn) {
+          token = await ms.getToken(GRAPH_WRITE_SCOPES)
+        }
+        const created = await api.createTask(payload, {
+          addToOutlook: opts.addToOutlook,
+          token,
+        })
         setTasks((prev) => [...prev, created])
-        showToast('Task added!')
+        showToast(opts.addToOutlook ? 'Task added & sent to Outlook!' : 'Task added!')
       }
       setModal(null)
     } catch (err) {
@@ -210,6 +229,7 @@ function App() {
           onExport={handleExport}
           onNewTask={openCreate}
           onOpenAssistant={() => setAssistantOpen(true)}
+          ms={ms}
         />
         <div className="content">
           {loading ? (
@@ -240,6 +260,7 @@ function App() {
           conflict={modal.conflict}
           projects={projects}
           users={users}
+          msSignedIn={ms.isSignedIn}
           onClose={() => setModal(null)}
           onSave={handleSave}
         />
@@ -249,6 +270,8 @@ function App() {
           onClose={() => setAssistantOpen(false)}
           onSuggestion={handleAssistantSuggestion}
           onError={(message) => showToast(message, 'error')}
+          onSubmit={handleAssistantSubmit}
+          msSignedIn={ms.isSignedIn}
         />
       )}
       <Toast message={toast?.message ?? null} variant={toast?.variant} />
