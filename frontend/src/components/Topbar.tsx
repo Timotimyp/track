@@ -6,10 +6,11 @@ interface TopbarProps {
   onSearchChange: (value: string) => void
   onExport: () => void
   onNewTask: () => void
+  onOpenAssistant: () => void
 }
 
 export const Topbar = forwardRef<HTMLInputElement, TopbarProps>(function Topbar(
-  { title, search, onSearchChange, onExport, onNewTask },
+  { title, search, onSearchChange, onExport, onNewTask, onOpenAssistant },
   ref,
 ) {
   return (
@@ -25,6 +26,13 @@ export const Topbar = forwardRef<HTMLInputElement, TopbarProps>(function Topbar(
           onChange={(e) => onSearchChange(e.target.value)}
         />
       </div>
+      <button
+        className="topbar-btn btn-assistant"
+        onClick={onOpenAssistant}
+        title="Voice / AI assistant"
+      >
+        🎙 AI
+      </button>
       <button className="topbar-btn btn-ghost" onClick={onExport}>
         ⬇ Export
       </button>

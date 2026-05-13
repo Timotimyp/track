@@ -42,3 +42,21 @@ export type View =
 
 export type Filter = 'all' | 'todo' | 'inprog' | 'done' | 'high'
 export type SortKey = '' | 'due' | 'priority' | 'status'
+
+export type AssistantLanguage = 'ru-RU' | 'en-US'
+
+export interface AssistantTaskSuggestion {
+  title: string
+  desc: string
+  status: Status
+  priority: Priority
+  tag: Tag
+  assignee: string
+  due: string | null
+  proj: string
+}
+
+export interface AssistantResponse {
+  recommendation: string
+  task: AssistantTaskSuggestion
+}

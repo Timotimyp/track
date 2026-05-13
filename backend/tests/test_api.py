@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import os
 from collections.abc import Iterator
+from datetime import date
 
 import pytest
 from fastapi.testclient import TestClient
@@ -72,6 +73,60 @@ def test_create_update_delete_task(client: TestClient) -> None:
 
     response = client.get(f"/api/tasks/{task_id}")
     assert response.status_code == 404
+
+
+def test_assistant_endpoint_returns_structured_task(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """The /api/assistant endpoint should return what the LLM returned, validated."""
+    import app.main as main_module
+    from app.assistant import AssistantResponse, AssistantTask
+
+    async def fake_interpret(request, *, today, **kwargs):  # noqa: ANN001
+        assert request.text.strip() != ""
+        assert isinstance(today, date)
+        return AssistantResponse(
+            recommendation="Looks like a backend bug \u2014 assigning to BL with high priority.",
+            task=AssistantTask(
+                title="Fix payment timeout bug",
+                desc="Investigate 504s on checkout",
+                status="todo",
+                priority="high",
+                tag="dev",
+                assignee="BL",
+                due=None,
+                proj="Backend API",
+            ),
+        )
+
+    monkeypatch.setattr(main_module, "interpret_command", fake_interpret)
+
+    response = client.post(
+        "/api/assistant",
+        json={"text": "\u041f\u043e\u0447\u0438\u043d\u0438 \u043b\u0430\u0433 \u043d\u0430 \u0447\u0435\u043a\u0430\u0443\u0442\u0435, \u0441\u0440\u043e\u0447\u043d\u043e", "language": "ru-RU"},
+    )
+    assert response.status_code == 200
+    body = response.json()
+    assert body["task"]["assignee"] == "BL"
+    assert body["task"]["priority"] == "high"
+    assert body["task"]["proj"] == "Backend API"
+    assert "recommendation" in body and len(body["recommendation"]) > 0
+
+
+def test_assistant_endpoint_propagates_errors(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import app.main as main_module
+    from app.assistant import AssistantError
+
+    async def boom(request, *, today, **kwargs):  # noqa: ANN001
+        raise AssistantError("GEMINI_API_KEY is not configured on the server.")
+
+    monkeypatch.setattr(main_module, "interpret_command", boom)
+
+    response = client.post("/api/assistant", json={"text": "hello", "language": "en-US"})
+    assert response.status_code == 502
+    assert "GEMINI_API_KEY" in response.json()["detail"]
 
 
 def teardown_module(_module) -> None:

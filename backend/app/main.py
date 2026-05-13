@@ -8,6 +8,12 @@ from fastapi import Depends, FastAPI, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
 from sqlmodel import Session, select
 
+from app.assistant import (
+    AssistantError,
+    AssistantRequest,
+    AssistantResponse,
+    interpret_command,
+)
 from app.db import engine, get_session, init_db
 from app.models import (
     Project,
@@ -109,3 +115,13 @@ def delete_task(task_id: int, session: Session = Depends(get_session)) -> None:
         raise HTTPException(status_code=404, detail="Task not found")
     session.delete(task)
     session.commit()
+
+
+@app.post("/api/assistant", response_model=AssistantResponse)
+async def assistant(request: AssistantRequest) -> AssistantResponse:
+    """Parse a free-form voice/text command into a structured task suggestion."""
+    today = datetime.now(UTC).date()
+    try:
+        return await interpret_command(request, today=today)
+    except AssistantError as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc

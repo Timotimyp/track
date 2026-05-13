@@ -3,6 +3,8 @@ import type { Project, Task, TaskInput, User } from '../types'
 
 interface TaskModalProps {
   initial: Task | null
+  prefill?: TaskInput | null
+  recommendation?: string | null
   projects: Project[]
   users: User[]
   onClose: () => void
@@ -13,7 +15,11 @@ function defaultDate(): string {
   return new Date().toISOString().split('T')[0]
 }
 
-function formFromInitial(initial: Task | null, projects: Project[]): TaskInput {
+function formFromInitial(
+  initial: Task | null,
+  prefill: TaskInput | null | undefined,
+  projects: Project[],
+): TaskInput {
   if (initial) {
     return {
       title: initial.title,
@@ -24,6 +30,12 @@ function formFromInitial(initial: Task | null, projects: Project[]): TaskInput {
       assignee: initial.assignee,
       due: initial.due ?? '',
       proj: initial.proj,
+    }
+  }
+  if (prefill) {
+    return {
+      ...prefill,
+      due: prefill.due ?? '',
     }
   }
   return {
@@ -38,8 +50,16 @@ function formFromInitial(initial: Task | null, projects: Project[]): TaskInput {
   }
 }
 
-export function TaskModal({ initial, projects, users, onClose, onSave }: TaskModalProps) {
-  const [form, setForm] = useState<TaskInput>(() => formFromInitial(initial, projects))
+export function TaskModal({
+  initial,
+  prefill,
+  recommendation,
+  projects,
+  users,
+  onClose,
+  onSave,
+}: TaskModalProps) {
+  const [form, setForm] = useState<TaskInput>(() => formFromInitial(initial, prefill, projects))
   const [titleError, setTitleError] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
 
@@ -66,11 +86,19 @@ export function TaskModal({ initial, projects, users, onClose, onSave }: TaskMod
     <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && onClose()}>
       <div className="modal">
         <div className="modal-header">
-          <div className="modal-title">{initial ? 'Edit Task' : 'Add New Task'}</div>
+          <div className="modal-title">
+            {initial ? 'Edit Task' : prefill ? '✨ Review AI Suggestion' : 'Add New Task'}
+          </div>
           <button className="modal-close" onClick={onClose}>
             ✕
           </button>
         </div>
+        {recommendation && (
+          <div className="assistant-recommendation">
+            <span className="assistant-recommendation-icon">🤖</span>
+            <span>{recommendation}</span>
+          </div>
+        )}
         <div className="form-group">
           <label className="form-label">Task Title *</label>
           <input

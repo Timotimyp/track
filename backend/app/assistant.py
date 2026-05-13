@@ -1,0 +1,203 @@
+"""Voice/text assistant that turns a free-form command into a structured task.
+
+Calls Google Gemini's `generateContent` REST endpoint with a strict JSON schema so
+the response is deterministic and easy to consume. The API key is read from the
+``GEMINI_API_KEY`` environment variable.
+"""
+from __future__ import annotations
+
+import json
+import os
+from datetime import date
+from typing import Any
+
+import httpx
+from pydantic import BaseModel, Field
+
+from app.models import Priority, Status, Tag
+from app.seed import PROJECTS, USERS
+
+DEFAULT_GEMINI_MODEL = "gemini-flash-latest"
+GEMINI_API_BASE = "https://generativelanguage.googleapis.com/v1beta/models"
+GEMINI_TIMEOUT = 20.0
+
+
+def _gemini_url() -> str:
+    model = os.environ.get("GEMINI_MODEL", DEFAULT_GEMINI_MODEL)
+    return f"{GEMINI_API_BASE}/{model}:generateContent"
+
+
+class AssistantRequest(BaseModel):
+    text: str = Field(min_length=1, max_length=2000)
+    language: str = "ru-RU"
+
+
+class AssistantTask(BaseModel):
+    title: str
+    desc: str = ""
+    status: Status = "todo"
+    priority: Priority = "medium"
+    tag: Tag = "dev"
+    assignee: str = "YO"
+    due: date | None = None
+    proj: str = "Website Redesign"
+
+
+class AssistantResponse(BaseModel):
+    recommendation: str
+    task: AssistantTask
+
+
+def _project_names() -> list[str]:
+    return [p.name for p in PROJECTS]
+
+
+def _assignee_codes() -> list[str]:
+    return [u.code for u in USERS]
+
+
+def _build_prompt(text: str, language: str, today: date) -> str:
+    project_lines = "\n".join(f"- {p.name}" for p in PROJECTS)
+    user_lines = "\n".join(f"- {u.code}: {u.name}" for u in USERS)
+    is_russian = language.lower().startswith("ru")
+    reply_lang = "Russian" if is_russian else "English"
+    return f"""You are TaskFlow's task-creation assistant.
+
+The user spoke (language: {language}, today is {today.isoformat()}):
+"\"\"\"{text}\"\"\""
+
+Extract a single actionable task from this command. Pick the most appropriate
+values from the lists below — do NOT invent new projects, assignees, tags, or
+statuses.
+
+Available projects:
+{project_lines}
+
+Available assignees (use the 2-letter code only):
+{user_lines}
+- "YO" means the speaker themself; use it when the user says "me/myself/я/мне".
+
+Available categories (tag): dev, design, qa, pm.
+Available priorities: high, medium, low.
+Available statuses: todo (default), inprog, done.
+
+Date handling:
+- If the user mentions a relative date ("tomorrow", "next week", "Friday",
+  "завтра", "в пятницу", "через 3 дня"), compute the actual YYYY-MM-DD using
+  today = {today.isoformat()}.
+- If no date is mentioned, omit `due` (set it to null).
+- Never set a due date in the past.
+
+Recommendation field:
+- Write 1-2 short sentences in {reply_lang} explaining why you picked this
+  project / assignee / priority / due date. Be concise and concrete.
+
+Title field:
+- Short, imperative, max ~80 chars. Strip filler words.
+
+Respond ONLY with JSON that conforms to the response schema. No prose, no
+markdown fences."""
+
+
+def _response_schema() -> dict[str, Any]:
+    return {
+        "type": "object",
+        "properties": {
+            "recommendation": {"type": "string"},
+            "task": {
+                "type": "object",
+                "properties": {
+                    "title": {"type": "string"},
+                    "desc": {"type": "string"},
+                    "status": {"type": "string", "enum": ["todo", "inprog", "done"]},
+                    "priority": {"type": "string", "enum": ["high", "medium", "low"]},
+                    "tag": {"type": "string", "enum": ["dev", "design", "qa", "pm"]},
+                    "assignee": {"type": "string", "enum": _assignee_codes()},
+                    "due": {"type": "string"},
+                    "proj": {"type": "string", "enum": _project_names()},
+                },
+                "required": [
+                    "title",
+                    "priority",
+                    "tag",
+                    "assignee",
+                    "proj",
+                    "status",
+                ],
+            },
+        },
+        "required": ["recommendation", "task"],
+    }
+
+
+def _extract_json_text(payload: dict[str, Any]) -> str:
+    candidates = payload.get("candidates") or []
+    if not candidates:
+        raise AssistantError("Gemini returned no candidates")
+    parts = candidates[0].get("content", {}).get("parts") or []
+    if not parts:
+        raise AssistantError("Gemini returned an empty content")
+    return parts[0].get("text", "")
+
+
+def _normalize_task(raw: dict[str, Any]) -> dict[str, Any]:
+    """Patch loose model output so it matches AssistantTask validation."""
+    task = dict(raw)
+    if task.get("due") in ("", None):
+        task.pop("due", None)
+    if task.get("assignee") not in _assignee_codes():
+        task["assignee"] = "YO"
+    if task.get("proj") not in _project_names():
+        task["proj"] = _project_names()[0]
+    return task
+
+
+class AssistantError(RuntimeError):
+    """Raised when the assistant cannot fulfil the request."""
+
+
+async def interpret_command(
+    request: AssistantRequest,
+    *,
+    today: date,
+    api_key: str | None = None,
+    http_client: httpx.AsyncClient | None = None,
+) -> AssistantResponse:
+    """Call Gemini and return a structured AssistantResponse."""
+    key = api_key or os.environ.get("GEMINI_API_KEY")
+    if not key:
+        raise AssistantError(
+            "GEMINI_API_KEY is not configured on the server."
+        )
+
+    body = {
+        "contents": [
+            {"role": "user", "parts": [{"text": _build_prompt(request.text, request.language, today)}]},
+        ],
+        "generationConfig": {
+            "responseMimeType": "application/json",
+            "responseSchema": _response_schema(),
+            "temperature": 0.2,
+        },
+    }
+    url = f"{_gemini_url()}?key={key}"
+
+    if http_client is None:
+        async with httpx.AsyncClient(timeout=GEMINI_TIMEOUT) as client:
+            response = await client.post(url, json=body)
+    else:
+        response = await http_client.post(url, json=body, timeout=GEMINI_TIMEOUT)
+
+    if response.status_code >= 400:
+        detail = response.text[:500]
+        raise AssistantError(f"Gemini API error {response.status_code}: {detail}")
+
+    payload = response.json()
+    text = _extract_json_text(payload)
+    try:
+        parsed = json.loads(text)
+    except json.JSONDecodeError as exc:
+        raise AssistantError(f"Gemini returned non-JSON content: {text[:200]}") from exc
+
+    parsed["task"] = _normalize_task(parsed.get("task") or {})
+    return AssistantResponse.model_validate(parsed)

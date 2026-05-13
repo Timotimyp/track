@@ -1,4 +1,4 @@
-import type { Project, Task, TaskInput, User } from './types'
+import type { AssistantLanguage, AssistantResponse, Project, Task, TaskInput, User } from './types'
 
 const BASE = '/api'
 
@@ -24,4 +24,9 @@ export const api = {
   updateTask: (id: number, payload: Partial<TaskInput>) =>
     request<Task>(`/tasks/${id}`, { method: 'PATCH', body: JSON.stringify(payload) }),
   deleteTask: (id: number) => request<void>(`/tasks/${id}`, { method: 'DELETE' }),
+  askAssistant: (text: string, language: AssistantLanguage) =>
+    request<AssistantResponse>('/assistant', {
+      method: 'POST',
+      body: JSON.stringify({ text, language }),
+    }),
 }

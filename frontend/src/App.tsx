@@ -1,12 +1,13 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
+import { AssistantPanel } from './components/AssistantPanel'
 import { Dashboard } from './components/Dashboard'
 import { Sidebar } from './components/Sidebar'
 import { TaskModal } from './components/TaskModal'
 import { TaskTable } from './components/TaskTable'
 import { Toast } from './components/Toast'
 import { Topbar } from './components/Topbar'
-import type { Filter, Project, SortKey, Task, TaskInput, User, View } from './types'
+import type { AssistantResponse, Filter, Project, SortKey, Task, TaskInput, User, View } from './types'
 import { VIEW_TITLES, applyFilter, applySearch, applySort, applyView, exportTasksToCsv } from './utils'
 
 interface ToastState {
@@ -23,7 +24,13 @@ function App() {
   const [filter, setFilter] = useState<Filter>('all')
   const [sort, setSort] = useState<SortKey>('')
   const [search, setSearch] = useState('')
-  const [modal, setModal] = useState<{ key: number; editing: Task | null } | null>(null)
+  const [modal, setModal] = useState<{
+    key: number
+    editing: Task | null
+    prefill: TaskInput | null
+    recommendation: string | null
+  } | null>(null)
+  const [assistantOpen, setAssistantOpen] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
   const toastTimer = useRef<number | null>(null)
   const searchRef = useRef<HTMLInputElement>(null)
@@ -83,11 +90,31 @@ function App() {
   }
 
   function openCreate() {
-    setModal({ key: Date.now(), editing: null })
+    setModal({ key: Date.now(), editing: null, prefill: null, recommendation: null })
   }
 
   function openEdit(task: Task) {
-    setModal({ key: Date.now(), editing: task })
+    setModal({ key: Date.now(), editing: task, prefill: null, recommendation: null })
+  }
+
+  function handleAssistantSuggestion(response: AssistantResponse) {
+    const prefill: TaskInput = {
+      title: response.task.title,
+      desc: response.task.desc ?? '',
+      status: response.task.status,
+      priority: response.task.priority,
+      tag: response.task.tag,
+      assignee: response.task.assignee,
+      due: response.task.due ?? '',
+      proj: response.task.proj,
+    }
+    setAssistantOpen(false)
+    setModal({
+      key: Date.now(),
+      editing: null,
+      prefill,
+      recommendation: response.recommendation,
+    })
   }
 
   async function handleSave(data: TaskInput, id: number | null) {
@@ -153,6 +180,7 @@ function App() {
           onSearchChange={handleSearchChange}
           onExport={handleExport}
           onNewTask={openCreate}
+          onOpenAssistant={() => setAssistantOpen(true)}
         />
         <div className="content">
           {loading ? (
@@ -178,10 +206,19 @@ function App() {
         <TaskModal
           key={modal.key}
           initial={modal.editing}
+          prefill={modal.prefill}
+          recommendation={modal.recommendation}
           projects={projects}
           users={users}
           onClose={() => setModal(null)}
           onSave={handleSave}
+        />
+      )}
+      {assistantOpen && (
+        <AssistantPanel
+          onClose={() => setAssistantOpen(false)}
+          onSuggestion={handleAssistantSuggestion}
+          onError={(message) => showToast(message, 'error')}
         />
       )}
       <Toast message={toast?.message ?? null} variant={toast?.variant} />
