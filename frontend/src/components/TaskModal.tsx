@@ -1,0 +1,173 @@
+import { useEffect, useRef, useState } from 'react'
+import type { Project, Task, TaskInput, User } from '../types'
+
+interface TaskModalProps {
+  initial: Task | null
+  projects: Project[]
+  users: User[]
+  onClose: () => void
+  onSave: (data: TaskInput, id: number | null) => Promise<void> | void
+}
+
+function defaultDate(): string {
+  return new Date().toISOString().split('T')[0]
+}
+
+function formFromInitial(initial: Task | null, projects: Project[]): TaskInput {
+  if (initial) {
+    return {
+      title: initial.title,
+      desc: initial.desc,
+      status: initial.status,
+      priority: initial.priority,
+      tag: initial.tag,
+      assignee: initial.assignee,
+      due: initial.due ?? '',
+      proj: initial.proj,
+    }
+  }
+  return {
+    title: '',
+    desc: '',
+    status: 'todo',
+    priority: 'medium',
+    tag: 'dev',
+    assignee: 'YO',
+    due: defaultDate(),
+    proj: projects[0]?.name || 'Website Redesign',
+  }
+}
+
+export function TaskModal({ initial, projects, users, onClose, onSave }: TaskModalProps) {
+  const [form, setForm] = useState<TaskInput>(() => formFromInitial(initial, projects))
+  const [titleError, setTitleError] = useState(false)
+  const titleRef = useRef<HTMLInputElement>(null)
+
+  useEffect(() => {
+    titleRef.current?.focus()
+  }, [])
+
+  function update<K extends keyof TaskInput>(key: K, value: TaskInput[K]) {
+    setForm((f) => ({ ...f, [key]: value }))
+  }
+
+  async function save() {
+    const title = form.title.trim()
+    if (!title) {
+      setTitleError(true)
+      titleRef.current?.focus()
+      return
+    }
+    setTitleError(false)
+    await onSave({ ...form, title, desc: form.desc.trim() }, initial?.id ?? null)
+  }
+
+  return (
+    <div className="modal-bg" onClick={(e) => e.target === e.currentTarget && onClose()}>
+      <div className="modal">
+        <div className="modal-header">
+          <div className="modal-title">{initial ? 'Edit Task' : 'Add New Task'}</div>
+          <button className="modal-close" onClick={onClose}>
+            ✕
+          </button>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Task Title *</label>
+          <input
+            ref={titleRef}
+            className={`form-input ${titleError ? 'error' : ''}`}
+            type="text"
+            placeholder="What needs to be done?"
+            value={form.title}
+            onChange={(e) => update('title', e.target.value)}
+          />
+        </div>
+        <div className="form-group">
+          <label className="form-label">Description</label>
+          <textarea
+            className="form-input"
+            rows={2}
+            placeholder="Optional details…"
+            style={{ resize: 'none' }}
+            value={form.desc}
+            onChange={(e) => update('desc', e.target.value)}
+          />
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Priority</label>
+            <select
+              className="form-input form-select"
+              value={form.priority}
+              onChange={(e) => update('priority', e.target.value as TaskInput['priority'])}
+            >
+              <option value="high">🔴 High</option>
+              <option value="medium">🟡 Medium</option>
+              <option value="low">🟢 Low</option>
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Category</label>
+            <select
+              className="form-input form-select"
+              value={form.tag}
+              onChange={(e) => update('tag', e.target.value as TaskInput['tag'])}
+            >
+              <option value="dev">Dev</option>
+              <option value="design">Design</option>
+              <option value="qa">QA</option>
+              <option value="pm">PM</option>
+            </select>
+          </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Assignee</label>
+            <select
+              className="form-input form-select"
+              value={form.assignee}
+              onChange={(e) => update('assignee', e.target.value)}
+            >
+              {users.map((u) => (
+                <option key={u.code} value={u.code}>
+                  {u.code} — {u.name}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Due Date</label>
+            <input
+              className="form-input"
+              type="date"
+              value={form.due ?? ''}
+              onChange={(e) => update('due', e.target.value)}
+            />
+          </div>
+        </div>
+        <div className="form-group">
+          <label className="form-label">Project</label>
+          <select
+            className="form-input form-select"
+            value={form.proj}
+            onChange={(e) => update('proj', e.target.value)}
+          >
+            {projects.map((p) => (
+              <option key={p.slug} value={p.name}>
+                {p.name}
+              </option>
+            ))}
+          </select>
+        </div>
+        <div className="modal-actions">
+          <button className="topbar-btn btn-ghost" onClick={onClose}>
+            Cancel
+          </button>
+          <button className="topbar-btn btn-primary" onClick={save}>
+            Save Task
+          </button>
+        </div>
+      </div>
+    </div>
+  )
+}
