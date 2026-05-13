@@ -29,6 +29,7 @@ function formFromInitial(
       tag: initial.tag,
       assignee: initial.assignee,
       due: initial.due ?? '',
+      due_time: initial.due_time ?? '',
       proj: initial.proj,
     }
   }
@@ -36,6 +37,7 @@ function formFromInitial(
     return {
       ...prefill,
       due: prefill.due ?? '',
+      due_time: prefill.due_time ?? '',
     }
   }
   return {
@@ -46,6 +48,7 @@ function formFromInitial(
     tag: 'dev',
     assignee: 'YO',
     due: defaultDate(),
+    due_time: '',
     proj: projects[0]?.name || 'Website Redesign',
   }
 }
@@ -172,6 +175,18 @@ export function TaskModal({
               onChange={(e) => update('due', e.target.value)}
             />
           </div>
+        </div>
+        <div className="form-row">
+          <div className="form-group">
+            <label className="form-label">Time (optional)</label>
+            <input
+              className="form-input"
+              type="time"
+              value={form.due_time ?? ''}
+              onChange={(e) => update('due_time', e.target.value)}
+            />
+          </div>
+          <div className="form-group" />
         </div>
         <div className="form-group">
           <label className="form-label">Project</label>

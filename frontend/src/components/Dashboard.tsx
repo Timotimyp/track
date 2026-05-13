@@ -51,7 +51,9 @@ export function Dashboard({ tasks, onToggle, onEdit, onDelete }: DashboardProps)
       </div>
 
       <TaskTable
-        tasks={tasks.slice(0, 5)}
+        tasks={[...tasks]
+          .sort((a, b) => (b.created_at || '').localeCompare(a.created_at || ''))
+          .slice(0, 5)}
         label="Recent Tasks"
         onToggle={onToggle}
         onEdit={onEdit}

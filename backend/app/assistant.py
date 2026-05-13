@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from datetime import date
 from typing import Any
 
@@ -40,6 +41,7 @@ class AssistantTask(BaseModel):
     tag: Tag = "dev"
     assignee: str = "YO"
     due: date | None = None
+    due_time: str | None = None
     proj: str = "Website Redesign"
 
 
@@ -88,6 +90,16 @@ Date handling:
 - If no date is mentioned, omit `due` (set it to null).
 - Never set a due date in the past.
 
+Time handling:
+- If the user mentions a specific time of day ("at 3pm", "в 15:00", "в 3 дня",
+  "к 17:30", "вечером", "in the morning"), set `due_time` to the 24-hour
+  "HH:MM" string (e.g. "15:00", "09:30"). Map vague phrases sensibly:
+  morning=09:00, noon=12:00, afternoon=15:00, evening=18:00, night=21:00,
+  "в X дня"=15:00 + X hours when ambiguous, but prefer explicit numbers.
+- If no time is mentioned, omit `due_time` (set it to null).
+- `due_time` only makes sense together with `due`; if `due` is null, leave
+  `due_time` null too.
+
 Recommendation field:
 - Write 1-2 short sentences in {reply_lang} explaining why you picked this
   project / assignee / priority / due date. Be concise and concrete.
@@ -114,6 +126,7 @@ def _response_schema() -> dict[str, Any]:
                     "tag": {"type": "string", "enum": ["dev", "design", "qa", "pm"]},
                     "assignee": {"type": "string", "enum": _assignee_codes()},
                     "due": {"type": "string"},
+                    "due_time": {"type": "string"},
                     "proj": {"type": "string", "enum": _project_names()},
                 },
                 "required": [
@@ -140,11 +153,17 @@ def _extract_json_text(payload: dict[str, Any]) -> str:
     return parts[0].get("text", "")
 
 
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
 def _normalize_task(raw: dict[str, Any]) -> dict[str, Any]:
     """Patch loose model output so it matches AssistantTask validation."""
     task = dict(raw)
     if task.get("due") in ("", None):
         task.pop("due", None)
+    raw_time = task.get("due_time")
+    if raw_time in ("", None) or not _TIME_RE.match(str(raw_time)):
+        task.pop("due_time", None)
     if task.get("assignee") not in _assignee_codes():
         task["assignee"] = "YO"
     if task.get("proj") not in _project_names():

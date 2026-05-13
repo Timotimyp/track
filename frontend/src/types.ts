@@ -11,6 +11,7 @@ export interface Task {
   tag: Tag
   assignee: string
   due: string | null
+  due_time: string | null
   proj: string
   created_at: string
   updated_at: string
@@ -53,6 +54,7 @@ export interface AssistantTaskSuggestion {
   tag: Tag
   assignee: string
   due: string | null
+  due_time: string | null
   proj: string
 }
 

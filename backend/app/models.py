@@ -1,15 +1,26 @@
 """SQLModel table and Pydantic schemas for TaskFlow."""
 from __future__ import annotations
 
+import re
 from datetime import UTC, date, datetime
 from typing import Literal
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 from sqlmodel import Field, SQLModel
 
 Status = Literal["todo", "inprog", "done"]
 Priority = Literal["high", "medium", "low"]
 Tag = Literal["dev", "design", "qa", "pm"]
+
+_TIME_RE = re.compile(r"^([01]\d|2[0-3]):[0-5]\d$")
+
+
+def _validate_due_time(value: str | None) -> str | None:
+    if value is None or value == "":
+        return None
+    if not _TIME_RE.match(value):
+        raise ValueError("due_time must be in HH:MM 24-hour format")
+    return value
 
 
 class Task(SQLModel, table=True):
@@ -25,6 +36,7 @@ class Task(SQLModel, table=True):
     tag: str = "dev"
     assignee: str = "YO"
     due: date | None = None
+    due_time: str | None = None
     proj: str = "Website Redesign"
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC).replace(tzinfo=None))
@@ -40,7 +52,13 @@ class TaskCreate(BaseModel):
     tag: Tag = "dev"
     assignee: str = "YO"
     due: date | None = None
+    due_time: str | None = None
     proj: str = "Website Redesign"
+
+    @field_validator("due_time", mode="before")
+    @classmethod
+    def _check_create_time(cls, value: str | None) -> str | None:
+        return _validate_due_time(value)
 
 
 class TaskUpdate(BaseModel):
@@ -51,7 +69,13 @@ class TaskUpdate(BaseModel):
     tag: Tag | None = None
     assignee: str | None = None
     due: date | None = None
+    due_time: str | None = None
     proj: str | None = None
+
+    @field_validator("due_time", mode="before")
+    @classmethod
+    def _check_update_time(cls, value: str | None) -> str | None:
+        return _validate_due_time(value)
 
 
 class TaskRead(BaseModel):
@@ -63,6 +87,7 @@ class TaskRead(BaseModel):
     tag: Tag
     assignee: str
     due: date | None
+    due_time: str | None = None
     proj: str
     created_at: datetime
     updated_at: datetime

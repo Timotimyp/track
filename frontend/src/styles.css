@@ -141,7 +141,8 @@ button{font-family:inherit}
 
 .av-sm{width:24px;height:24px;border-radius:50%;font-size:10px;font-weight:600;display:flex;align-items:center;justify-content:center;flex-shrink:0}
 
-.due-text{font-size:12px;font-family:'DM Mono',monospace}
+.due-text{font-size:12px;font-family:'DM Mono',monospace;display:flex;flex-direction:column;line-height:1.2}
+.due-time{color:var(--text3);font-size:11px}
 .due-over{color:var(--red)}
 
 .row-actions{display:flex;gap:4px;opacity:0;transition:opacity .15s}

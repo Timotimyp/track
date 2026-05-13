@@ -78,6 +78,7 @@ npm run build
   tag: "dev" | "design" | "qa" | "pm",
   assignee: str,        // user code, e.g. "AK"
   due: date | null,
+  due_time: str | null, // optional "HH:MM" (24-hour)
   proj: str,            // project name
   created_at: datetime,
   updated_at: datetime
@@ -93,8 +94,10 @@ The React app reproduces every interaction from `SmartTaskManagerDEMO`:
   Operations).
 - Dashboard with four stat cards and an overall progress bar.
 - Task table with checkbox, category/priority/status badges, assignee
-  avatar, due date (red when overdue) and edit/delete row actions.
-- New / edit task modal with priority, category, assignee, due, project.
+  avatar, due date + optional time (red when overdue) and edit/delete
+  row actions.
+- New / edit task modal with priority, category, assignee, due date,
+  optional time (`HH:MM`), and project.
 - Filters (`All / To Do / In Progress / Done / High`) and sort
   (Due / Priority / Status).
 - Global search across title and project name (`Ctrl/Cmd + K`).
@@ -126,6 +129,7 @@ Gemini with a strict JSON schema and returns:
     "tag": "dev|design|qa|pm",
     "assignee": "AK|BL|CJ|DM|YO",
     "due": "YYYY-MM-DD" | null,
+    "due_time": "HH:MM" | null,
     "proj": "Website Redesign|Backend API|Mobile App|Operations",
     ...
   }

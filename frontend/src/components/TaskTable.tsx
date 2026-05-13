@@ -1,5 +1,5 @@
 import type { Filter, SortKey, Task } from '../types'
-import { AVATAR_COLORS, formatDate, isOverdue, statusLabel } from '../utils'
+import { AVATAR_COLORS, formatDate, formatTime, isOverdue, statusLabel } from '../utils'
 
 interface TaskTableProps {
   tasks: Task[]
@@ -113,7 +113,10 @@ export function TaskTable({
                 <span style={{ fontSize: 12, color: 'var(--text3)' }}>{t.assignee}</span>
               </div>
               <div className="due-cell">
-                <span className={`due-text ${isOverdue(t) ? 'due-over' : ''}`}>{formatDate(t.due)}</span>
+                <div className={`due-text ${isOverdue(t) ? 'due-over' : ''}`}>
+                  <div>{formatDate(t.due)}</div>
+                  {t.due_time && <div className="due-time">{formatTime(t.due_time)}</div>}
+                </div>
                 <div className="row-actions">
                   <button
                     className="act-btn"

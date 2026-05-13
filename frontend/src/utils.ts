@@ -42,6 +42,11 @@ export function formatDate(value: string | null): string {
   return new Date(value).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
 }
 
+export function formatTime(value: string | null | undefined): string {
+  if (!value) return ''
+  return value
+}
+
 export function statusLabel(status: Task['status']): string {
   return status === 'todo' ? 'To Do' : status === 'inprog' ? 'In Progress' : 'Done'
 }
@@ -90,10 +95,19 @@ export function applySort(tasks: Task[], sort: SortKey): Task[] {
 
 export function exportTasksToCsv(tasks: Task[]): void {
   const rows: string[][] = [
-    ['Title', 'Project', 'Priority', 'Category', 'Status', 'Assignee', 'Due Date'],
+    ['Title', 'Project', 'Priority', 'Category', 'Status', 'Assignee', 'Due Date', 'Due Time'],
   ]
   tasks.forEach((t) =>
-    rows.push([t.title, t.proj, t.priority, t.tag, t.status, t.assignee, t.due || '']),
+    rows.push([
+      t.title,
+      t.proj,
+      t.priority,
+      t.tag,
+      t.status,
+      t.assignee,
+      t.due || '',
+      t.due_time || '',
+    ]),
   )
   const csv = rows.map((r) => r.map((c) => `"${c}"`).join(',')).join('\n')
   const a = document.createElement('a')

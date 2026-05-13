@@ -59,14 +59,24 @@ def test_create_update_delete_task(client: TestClient) -> None:
         "tag": "dev",
         "assignee": "YO",
         "due": "2026-06-01",
+        "due_time": "15:30",
         "proj": "Website Redesign",
     }
     created = client.post("/api/tasks", json=payload).json()
     assert created["title"] == "Test task"
+    assert created["due_time"] == "15:30"
     task_id = created["id"]
 
-    updated = client.patch(f"/api/tasks/{task_id}", json={"status": "done"}).json()
+    updated = client.patch(
+        f"/api/tasks/{task_id}", json={"status": "done", "due_time": "09:00"}
+    ).json()
     assert updated["status"] == "done"
+    assert updated["due_time"] == "09:00"
+
+    bad = client.post(
+        "/api/tasks", json={**payload, "due_time": "25:99"}
+    )
+    assert bad.status_code == 422
 
     response = client.delete(f"/api/tasks/{task_id}")
     assert response.status_code == 204
@@ -95,6 +105,7 @@ def test_assistant_endpoint_returns_structured_task(
                 tag="dev",
                 assignee="BL",
                 due=None,
+                due_time="15:00",
                 proj="Backend API",
             ),
         )
@@ -110,6 +121,7 @@ def test_assistant_endpoint_returns_structured_task(
     assert body["task"]["assignee"] == "BL"
     assert body["task"]["priority"] == "high"
     assert body["task"]["proj"] == "Backend API"
+    assert body["task"]["due_time"] == "15:00"
     assert "recommendation" in body and len(body["recommendation"]) > 0
 
 

@@ -106,6 +106,7 @@ function App() {
       tag: response.task.tag,
       assignee: response.task.assignee,
       due: response.task.due ?? '',
+      due_time: response.task.due_time ?? '',
       proj: response.task.proj,
     }
     setAssistantOpen(false)
@@ -119,7 +120,11 @@ function App() {
 
   async function handleSave(data: TaskInput, id: number | null) {
     try {
-      const payload: TaskInput = { ...data, due: data.due ? data.due : null }
+      const payload: TaskInput = {
+        ...data,
+        due: data.due ? data.due : null,
+        due_time: data.due_time ? data.due_time : null,
+      }
       if (id) {
         const updated = await api.updateTask(id, payload)
         setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)))
