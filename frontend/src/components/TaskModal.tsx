@@ -1,10 +1,12 @@
 import { useEffect, useRef, useState } from 'react'
-import type { Project, Task, TaskInput, User } from '../types'
+import type { AssistantConflict, Project, Task, TaskInput, User } from '../types'
+import { formatDate, formatTime } from '../utils'
 
 interface TaskModalProps {
   initial: Task | null
   prefill?: TaskInput | null
   recommendation?: string | null
+  conflict?: AssistantConflict | null
   projects: Project[]
   users: User[]
   onClose: () => void
@@ -57,6 +59,7 @@ export function TaskModal({
   initial,
   prefill,
   recommendation,
+  conflict,
   projects,
   users,
   onClose,
@@ -64,7 +67,21 @@ export function TaskModal({
 }: TaskModalProps) {
   const [form, setForm] = useState<TaskInput>(() => formFromInitial(initial, prefill, projects))
   const [titleError, setTitleError] = useState(false)
+  const [conflictDismissed, setConflictDismissed] = useState(false)
   const titleRef = useRef<HTMLInputElement>(null)
+
+  const stillConflicts =
+    !!conflict &&
+    !conflictDismissed &&
+    !!form.due &&
+    !!form.due_time &&
+    conflict.conflicts.some(
+      (c) => c.due === form.due && c.due_time === form.due_time,
+    )
+
+  function applyAlternative(due: string, due_time: string) {
+    setForm((f) => ({ ...f, due, due_time }))
+  }
 
   useEffect(() => {
     titleRef.current?.focus()
@@ -100,6 +117,47 @@ export function TaskModal({
           <div className="assistant-recommendation">
             <span className="assistant-recommendation-icon">🤖</span>
             <span>{recommendation}</span>
+          </div>
+        )}
+        {stillConflicts && conflict && (
+          <div className="assistant-conflict" role="alert">
+            <div className="assistant-conflict-header">
+              <span className="assistant-conflict-icon">⚠️</span>
+              <div>
+                <div className="assistant-conflict-title">Конфликт по времени</div>
+                <div className="assistant-conflict-body">
+                  {conflict.conflicts.map((c) => (
+                    <div key={c.id}>
+                      «{c.title}» уже стоит на {formatDate(c.due)} в {formatTime(c.due_time)}
+                    </div>
+                  ))}
+                </div>
+              </div>
+            </div>
+            {conflict.alternatives.length > 0 && (
+              <div className="assistant-conflict-alts">
+                <span className="assistant-conflict-alts-label">Свободные слоты:</span>
+                {conflict.alternatives.map((alt) => (
+                  <button
+                    key={`${alt.due}T${alt.due_time}`}
+                    type="button"
+                    className="assistant-conflict-alt"
+                    onClick={() => applyAlternative(alt.due, alt.due_time)}
+                  >
+                    {alt.due === conflict.conflicts[0]?.due
+                      ? formatTime(alt.due_time)
+                      : `${formatDate(alt.due)} · ${formatTime(alt.due_time)}`}
+                  </button>
+                ))}
+              </div>
+            )}
+            <button
+              type="button"
+              className="assistant-conflict-dismiss"
+              onClick={() => setConflictDismissed(true)}
+            >
+              Игнорировать и сохранить как есть
+            </button>
           </div>
         )}
         <div className="form-group">

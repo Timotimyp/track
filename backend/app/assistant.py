@@ -15,6 +15,7 @@ from typing import Any
 import httpx
 from pydantic import BaseModel, Field
 
+from app.conflicts import AssistantConflict
 from app.models import Priority, Status, Tag
 from app.seed import PROJECTS, USERS
 
@@ -48,6 +49,7 @@ class AssistantTask(BaseModel):
 class AssistantResponse(BaseModel):
     recommendation: str
     task: AssistantTask
+    conflict: AssistantConflict | None = None
 
 
 def _project_names() -> list[str]:

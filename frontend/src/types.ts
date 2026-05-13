@@ -58,7 +58,25 @@ export interface AssistantTaskSuggestion {
   proj: string
 }
 
+export interface AssistantConflictTask {
+  id: number
+  title: string
+  due: string
+  due_time: string
+}
+
+export interface AssistantAlternative {
+  due: string
+  due_time: string
+}
+
+export interface AssistantConflict {
+  conflicts: AssistantConflictTask[]
+  alternatives: AssistantAlternative[]
+}
+
 export interface AssistantResponse {
   recommendation: string
   task: AssistantTaskSuggestion
+  conflict: AssistantConflict | null
 }

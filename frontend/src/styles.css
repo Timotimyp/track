@@ -220,3 +220,15 @@ button{font-family:inherit}
 
 .assistant-recommendation{display:flex;gap:10px;padding:12px 14px;margin-bottom:16px;background:var(--accent-bg);border:1px solid var(--accent-border);border-radius:var(--radius-sm);color:var(--text);font-size:13px;line-height:1.45}
 .assistant-recommendation-icon{font-size:16px;line-height:1;flex-shrink:0;margin-top:1px}
+
+.assistant-conflict{display:flex;flex-direction:column;gap:10px;padding:12px 14px;margin-bottom:16px;background:var(--amber-bg);border:1px solid var(--amber);border-radius:var(--radius-sm);color:var(--text);font-size:13px;line-height:1.45}
+.assistant-conflict-header{display:flex;gap:10px;align-items:flex-start}
+.assistant-conflict-icon{font-size:16px;line-height:1;flex-shrink:0;margin-top:1px}
+.assistant-conflict-title{font-weight:600;color:var(--amber);margin-bottom:2px}
+.assistant-conflict-body{color:var(--text2);font-size:12.5px}
+.assistant-conflict-alts{display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding-left:26px}
+.assistant-conflict-alts-label{font-size:12px;color:var(--text3)}
+.assistant-conflict-alt{padding:5px 12px;border-radius:99px;font-size:12px;font-weight:500;cursor:pointer;border:1px solid var(--amber);background:var(--surface2);color:var(--text);font-family:inherit;transition:all .15s}
+.assistant-conflict-alt:hover{background:var(--amber-bg);color:var(--amber)}
+.assistant-conflict-dismiss{align-self:flex-start;margin-left:26px;background:none;border:none;color:var(--text3);font-size:11px;cursor:pointer;text-decoration:underline;font-family:inherit;padding:0}
+.assistant-conflict-dismiss:hover{color:var(--text2)}

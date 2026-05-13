@@ -141,6 +141,85 @@ def test_assistant_endpoint_propagates_errors(
     assert "GEMINI_API_KEY" in response.json()["detail"]
 
 
+def test_assistant_detects_conflict_and_proposes_alternatives(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """When Gemini's suggested slot is occupied, the response includes a conflict block."""
+    import app.main as main_module
+    from app.assistant import AssistantResponse, AssistantTask
+
+    occupying = client.post(
+        "/api/tasks",
+        json={
+            "title": "Sprint planning",
+            "due": "2026-06-01",
+            "due_time": "15:00",
+            "proj": "Operations",
+        },
+    ).json()
+    assert occupying["due_time"] == "15:00"
+
+    async def fake_interpret(request, *, today, **kwargs):  # noqa: ANN001
+        return AssistantResponse(
+            recommendation="Suggest scheduling at the requested time.",
+            task=AssistantTask(
+                title="1:1 with Beth",
+                priority="medium",
+                tag="pm",
+                assignee="BL",
+                due=date(2026, 6, 1),
+                due_time="15:00",
+                proj="Backend API",
+            ),
+        )
+
+    monkeypatch.setattr(main_module, "interpret_command", fake_interpret)
+    body = client.post(
+        "/api/assistant",
+        json={"text": "Set up 1:1 with Beth on June 1 at 3pm", "language": "en-US"},
+    ).json()
+
+    conflict = body["conflict"]
+    assert conflict is not None
+    assert len(conflict["conflicts"]) == 1
+    assert conflict["conflicts"][0]["title"] == "Sprint planning"
+    assert conflict["conflicts"][0]["due_time"] == "15:00"
+    assert len(conflict["alternatives"]) == 3
+    # Same-day shifts come first when free
+    alt_keys = [(a["due"], a["due_time"]) for a in conflict["alternatives"]]
+    assert ("2026-06-01", "16:00") in alt_keys
+    assert ("2026-06-01", "14:00") in alt_keys
+
+
+def test_assistant_no_conflict_when_slot_is_free(
+    client: TestClient, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """An empty slot should produce conflict=None."""
+    import app.main as main_module
+    from app.assistant import AssistantResponse, AssistantTask
+
+    async def fake_interpret(request, *, today, **kwargs):  # noqa: ANN001
+        return AssistantResponse(
+            recommendation="No conflicts expected.",
+            task=AssistantTask(
+                title="Solo task",
+                priority="low",
+                tag="dev",
+                assignee="YO",
+                due=date(2030, 1, 1),
+                due_time="10:00",
+                proj="Backend API",
+            ),
+        )
+
+    monkeypatch.setattr(main_module, "interpret_command", fake_interpret)
+    body = client.post(
+        "/api/assistant",
+        json={"text": "schedule something in the far future", "language": "en-US"},
+    ).json()
+    assert body["conflict"] is None
+
+
 def teardown_module(_module) -> None:
     """Reset env var after tests."""
     os.environ.pop("TASKFLOW_DB_PATH", None)

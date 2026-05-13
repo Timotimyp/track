@@ -14,6 +14,7 @@ from app.assistant import (
     AssistantResponse,
     interpret_command,
 )
+from app.conflicts import check_conflict
 from app.db import engine, get_session, init_db
 from app.models import (
     Project,
@@ -118,10 +119,22 @@ def delete_task(task_id: int, session: Session = Depends(get_session)) -> None:
 
 
 @app.post("/api/assistant", response_model=AssistantResponse)
-async def assistant(request: AssistantRequest) -> AssistantResponse:
-    """Parse a free-form voice/text command into a structured task suggestion."""
+async def assistant(
+    request: AssistantRequest,
+    session: Session = Depends(get_session),
+) -> AssistantResponse:
+    """Parse a free-form voice/text command into a structured task suggestion.
+
+    After Gemini returns a candidate task, we look in the local DB for tasks
+    that occupy the same date + time slot and attach a conflict block to the
+    response. The frontend uses this to warn the user and offer alternatives.
+    """
     today = datetime.now(UTC).date()
     try:
-        return await interpret_command(request, today=today)
+        response = await interpret_command(request, today=today)
     except AssistantError as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    response.conflict = check_conflict(
+        session, response.task.due, response.task.due_time
+    )
+    return response

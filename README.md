@@ -132,6 +132,10 @@ Gemini with a strict JSON schema and returns:
     "due_time": "HH:MM" | null,
     "proj": "Website Redesign|Backend API|Mobile App|Operations",
     ...
+  },
+  "conflict": null | {
+    "conflicts": [{"id": int, "title": str, "due": "YYYY-MM-DD", "due_time": "HH:MM"}],
+    "alternatives": [{"due": "YYYY-MM-DD", "due_time": "HH:MM"}]
   }
 }
 ```
@@ -139,6 +143,18 @@ Gemini with a strict JSON schema and returns:
 The frontend then opens the regular Task modal pre-filled with the
 suggestion plus a recommendation banner — the user reviews and clicks
 **Add Task**, so nothing is created without confirmation.
+
+### Schedule-conflict detection
+
+After Gemini returns a candidate task with both a date and a time, the
+backend queries the local DB for any existing task that occupies the
+same `due` + `due_time` slot (exact HH:MM match — tasks have no
+duration). If a clash is found, the response carries a `conflict`
+block with up to 3 deterministically-computed free alternatives
+(`+1h`, `-1h`, `+2h`, `-2h`, next day same time, …). The modal shows
+an ⚠️ banner with the conflicting task(s) and a row of pill buttons
+— clicking one replaces the form's date+time. The user can also press
+"Игнорировать и сохранить как есть" to keep the original slot.
 
 To enable it, export your key before starting the backend:
 

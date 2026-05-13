@@ -7,7 +7,17 @@ import { TaskModal } from './components/TaskModal'
 import { TaskTable } from './components/TaskTable'
 import { Toast } from './components/Toast'
 import { Topbar } from './components/Topbar'
-import type { AssistantResponse, Filter, Project, SortKey, Task, TaskInput, User, View } from './types'
+import type {
+  AssistantConflict,
+  AssistantResponse,
+  Filter,
+  Project,
+  SortKey,
+  Task,
+  TaskInput,
+  User,
+  View,
+} from './types'
 import { VIEW_TITLES, applyFilter, applySearch, applySort, applyView, exportTasksToCsv } from './utils'
 
 interface ToastState {
@@ -29,6 +39,7 @@ function App() {
     editing: Task | null
     prefill: TaskInput | null
     recommendation: string | null
+    conflict: AssistantConflict | null
   } | null>(null)
   const [assistantOpen, setAssistantOpen] = useState(false)
   const [toast, setToast] = useState<ToastState | null>(null)
@@ -90,11 +101,23 @@ function App() {
   }
 
   function openCreate() {
-    setModal({ key: Date.now(), editing: null, prefill: null, recommendation: null })
+    setModal({
+      key: Date.now(),
+      editing: null,
+      prefill: null,
+      recommendation: null,
+      conflict: null,
+    })
   }
 
   function openEdit(task: Task) {
-    setModal({ key: Date.now(), editing: task, prefill: null, recommendation: null })
+    setModal({
+      key: Date.now(),
+      editing: task,
+      prefill: null,
+      recommendation: null,
+      conflict: null,
+    })
   }
 
   function handleAssistantSuggestion(response: AssistantResponse) {
@@ -115,6 +138,7 @@ function App() {
       editing: null,
       prefill,
       recommendation: response.recommendation,
+      conflict: response.conflict,
     })
   }
 
@@ -213,6 +237,7 @@ function App() {
           initial={modal.editing}
           prefill={modal.prefill}
           recommendation={modal.recommendation}
+          conflict={modal.conflict}
           projects={projects}
           users={users}
           onClose={() => setModal(null)}
