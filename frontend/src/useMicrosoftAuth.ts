@@ -1,8 +1,17 @@
 /**
  * Lightweight hook that surfaces the user's Microsoft account + a cached
  * Graph access token. Returns no-op values when MSAL is not configured.
+ *
+ * We deliberately do NOT use `useAccount` from msal-react: it expects an
+ * `AccountIdentifiers` shape and silently returns `null` when given a full
+ * `AccountInfo` (which is what `useMsal().accounts` provides). That mismatch
+ * left the UI stuck on the sign-in button even after a successful login.
+ * Reading `accounts[0]` directly is reactive — msal-react keeps the list
+ * up-to-date via internal event callbacks.
  */
-import { useAccount, useIsAuthenticated, useMsal } from '@azure/msal-react'
+import { EventType } from '@azure/msal-browser'
+import type { AuthenticationResult, EventMessage } from '@azure/msal-browser'
+import { useIsAuthenticated, useMsal } from '@azure/msal-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   acquireGraphToken,
@@ -24,9 +33,35 @@ export interface MicrosoftAuthState {
 export function useMicrosoftAuth(): MicrosoftAuthState {
   const enabled = isAzureConfigured()
   const { instance, accounts } = useMsal()
-  const account = useAccount(accounts[0] ?? null)
+  const account = accounts[0] ?? null
   const isAuthenticated = useIsAuthenticated()
   const [token, setToken] = useState<string | null>(null)
+
+  // Promote the freshly-signed-in account to "active" so MSAL uses it for
+  // silent token requests across renders. Without this, `acquireTokenSilent`
+  // sometimes fails with `no_account_in_silent_request` immediately after
+  // login.
+  useEffect(() => {
+    if (!enabled) return
+    const id = instance.addEventCallback((event: EventMessage) => {
+      if (
+        event.eventType === EventType.LOGIN_SUCCESS &&
+        event.payload &&
+        'account' in event.payload
+      ) {
+        const result = event.payload as AuthenticationResult
+        if (result.account) instance.setActiveAccount(result.account)
+      }
+    })
+    // If we already have an account on first render (e.g. session storage
+    // restore), promote it now.
+    if (accounts[0] && !instance.getActiveAccount()) {
+      instance.setActiveAccount(accounts[0])
+    }
+    return () => {
+      if (id) instance.removeEventCallback(id)
+    }
+  }, [enabled, instance, accounts])
 
   useEffect(() => {
     let cancelled = false
@@ -50,7 +85,8 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
   const signIn = useCallback(async () => {
     if (!enabled) return
     try {
-      await instance.loginPopup({ scopes: GRAPH_READ_SCOPES })
+      const result = await instance.loginPopup({ scopes: GRAPH_READ_SCOPES })
+      if (result.account) instance.setActiveAccount(result.account)
     } catch (err) {
       console.error('Microsoft sign-in failed', err)
     }
