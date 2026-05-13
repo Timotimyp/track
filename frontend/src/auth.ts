@@ -46,10 +46,17 @@ export function buildMsalConfig(): Configuration | null {
       postLogoutRedirectUri: window.location.origin,
     },
     cache: {
-      cacheLocation: 'sessionStorage',
+      // localStorage so that if the auth flow ends up in a new tab
+      // (popup blocked, redirect fallback, etc.) the original tab also
+      // sees the freshly-signed-in account and can update its UI via the
+      // `storage` event — see `useMicrosoftAuth` for the listener.
+      cacheLocation: 'localStorage',
     },
   }
 }
+
+/** localStorage key that MSAL writes when its account cache changes. */
+export const MSAL_ACCOUNT_KEYS_STORAGE_KEY = 'msal.account.keys'
 
 export const msalInstance: PublicClientApplication | null = (() => {
   const cfg = buildMsalConfig()

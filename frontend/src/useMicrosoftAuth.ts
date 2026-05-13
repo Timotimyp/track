@@ -17,6 +17,12 @@
  *   source of truth ourselves (`instance.getActiveAccount()` with a
  *   `getAllAccounts()` fallback) and subscribe to **every** MSAL event so
  *   any cache change triggers a refresh.
+ *
+ * - The MSAL cache lives in `localStorage` (see `auth.ts`). When the auth
+ *   flow ends up in a separate tab (popup blocked / redirect fallback),
+ *   that tab writes the account into localStorage. We listen for
+ *   `storage` events and `visibilitychange` so the original tab picks up
+ *   the new login without a manual reload.
  */
 import {
   EventType,
@@ -31,6 +37,7 @@ import {
   GRAPH_READ_SCOPES,
   GRAPH_WRITE_SCOPES,
   isAzureConfigured,
+  MSAL_ACCOUNT_KEYS_STORAGE_KEY,
   msalInstance,
 } from './auth'
 
@@ -91,8 +98,22 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
       setAccount(pickAccount())
     })
 
+    // Cross-tab sync: when another tab writes MSAL's account cache, refresh.
+    function onStorage(e: StorageEvent) {
+      if (!e.key || e.key.startsWith('msal.') || e.key === MSAL_ACCOUNT_KEYS_STORAGE_KEY) {
+        setAccount(pickAccount())
+      }
+    }
+    function onVisibilityChange() {
+      if (document.visibilityState === 'visible') setAccount(pickAccount())
+    }
+    window.addEventListener('storage', onStorage)
+    document.addEventListener('visibilitychange', onVisibilityChange)
+
     return () => {
       if (callbackId) instance.removeEventCallback(callbackId)
+      window.removeEventListener('storage', onStorage)
+      document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [enabled, instance])
 
