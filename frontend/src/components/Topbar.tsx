@@ -41,12 +41,12 @@ export const Topbar = forwardRef<HTMLInputElement, TopbarProps>(function Topbar(
           </button>
         ) : (
           <button
-            className="topbar-btn btn-ghost"
+            className="topbar-btn btn-ms"
             onClick={ms.signIn}
             title="Sign in with Microsoft to check your Outlook calendar"
           >
             <span className="ms-badge" aria-hidden>MS</span>
-            Sign in
+            Sign in with Microsoft
           </button>
         )
       )}

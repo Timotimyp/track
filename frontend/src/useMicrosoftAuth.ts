@@ -42,10 +42,18 @@ import {
 } from './auth'
 
 function pickInitialAccount(): AccountInfo | null {
-  if (!isAzureConfigured() || !msalInstance) return null
-  return (
-    msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0] ?? null
+  if (!isAzureConfigured() || !msalInstance) {
+    console.log('[ms-auth] pickInitialAccount: not configured')
+    return null
+  }
+  const active = msalInstance.getActiveAccount()
+  const all = msalInstance.getAllAccounts()
+  const picked = active ?? all[0] ?? null
+  console.log(
+    '[ms-auth] pickInitialAccount:',
+    { active: !!active, allCount: all.length, pickedUsername: picked?.username ?? null },
   )
+  return picked
 }
 
 export interface MicrosoftAuthState {
@@ -83,6 +91,7 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
     }
 
     const callbackId = instance.addEventCallback((event: EventMessage) => {
+      console.log('[ms-auth] MSAL event:', event.eventType)
       // Promote a freshly-acquired account to active so silent token requests
       // (e.g. for /me/calendarView) succeed without a popup.
       if (
@@ -138,23 +147,25 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
 
   const signIn = useCallback(async () => {
     if (!enabled) return
+    console.log('[ms-auth] starting loginRedirect')
     try {
-      const result = await instance.loginPopup({ scopes: GRAPH_READ_SCOPES })
-      if (result.account) {
-        instance.setActiveAccount(result.account)
-        setAccount(result.account)
-      }
+      // loginRedirect navigates the current tab to login.microsoftonline.com
+      // and back, so we never have to worry about cross-tab popups or browser
+      // popup blockers — by the time main.tsx re-runs handleRedirectPromise(),
+      // the account is already in MSAL's localStorage cache.
+      await instance.loginRedirect({ scopes: GRAPH_READ_SCOPES })
     } catch (err) {
-      console.error('Microsoft sign-in failed', err)
+      console.error('[ms-auth] Microsoft sign-in failed', err)
     }
   }, [enabled, instance])
 
   const signOut = useCallback(async () => {
     if (!enabled) return
+    console.log('[ms-auth] starting logoutRedirect')
     try {
-      await instance.logoutPopup()
+      await instance.logoutRedirect()
     } catch (err) {
-      console.error('Microsoft sign-out failed', err)
+      console.error('[ms-auth] Microsoft sign-out failed', err)
     } finally {
       setAccount(null)
     }

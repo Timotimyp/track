@@ -15,6 +15,16 @@ if (msalInstance) {
   instance
     .initialize()
     .then(() => instance.handleRedirectPromise())
+    .then((result) => {
+      console.log(
+        '[ms-auth] handleRedirectPromise result:',
+        result ? { username: result.account?.username ?? null } : 'no redirect response',
+      )
+      if (result?.account) instance.setActiveAccount(result.account)
+    })
+    .catch((err) => {
+      console.error('[ms-auth] handleRedirectPromise failed', err)
+    })
     .finally(() => {
       root.render(
         <StrictMode>
