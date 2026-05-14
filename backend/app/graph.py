@@ -106,20 +106,31 @@ async def create_calendar_event(
     body: str,
     start: datetime,
     end: datetime,
+    time_zone: str = "UTC",
 ) -> dict | None:
-    """Create an Outlook event. Returns the Graph JSON or None on failure."""
+    """Create an Outlook event. Returns the Graph JSON or None on failure.
+
+    ``start`` and ``end`` must be timezone-aware. ``time_zone`` is the IANA
+    name (e.g. "Europe/Moscow") under which Graph should store the event.
+    We send the local wall-clock time alongside that zone so the event
+    appears in Outlook at the time the user actually typed, not shifted by
+    whatever offset their local zone has from UTC.
+    """
     if not access_token:
         return None
+    # The caller is expected to have constructed `start` and `end` already in
+    # the desired wall-clock zone (matching `time_zone`). We just format the
+    # local components and tell Graph what zone they're in.
     payload = {
         "subject": subject,
         "body": {"contentType": "text", "content": body},
         "start": {
-            "dateTime": start.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S"),
-            "timeZone": "UTC",
+            "dateTime": start.strftime("%Y-%m-%dT%H:%M:%S"),
+            "timeZone": time_zone,
         },
         "end": {
-            "dateTime": end.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S"),
-            "timeZone": "UTC",
+            "dateTime": end.strftime("%Y-%m-%dT%H:%M:%S"),
+            "timeZone": time_zone,
         },
     }
     headers = {

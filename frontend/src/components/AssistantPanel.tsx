@@ -43,6 +43,8 @@ const STRINGS: Record<AssistantLanguage, Record<string, string>> = {
     noMic:
       'Голосовой ввод не поддерживается этим браузером (нужен Chrome/Edge). Введите текст вручную ниже.',
     empty: 'Сначала продиктуйте или введите команду.',
+    outlookHint:
+      '📅 Outlook Calendar подключён — AI учтёт твои встречи при поиске конфликта',
   },
   'en-US': {
     title: 'Voice Assistant',
@@ -57,6 +59,8 @@ const STRINGS: Record<AssistantLanguage, Record<string, string>> = {
     noMic:
       'Voice input is not supported in this browser (try Chrome or Edge). Type your command below.',
     empty: 'Dictate or type a command first.',
+    outlookHint:
+      '📅 Outlook Calendar is connected — AI will check your meetings for conflicts',
   },
 }
 
@@ -73,10 +77,15 @@ export function AssistantPanel({
   const [interimText, setInterimText] = useState('')
   const [error, setError] = useState<string | null>(null)
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+  // Tracks whether the user clicked Stop themselves — distinguishes a
+  // genuine end-of-session from Chrome's silent auto-stop, which we work
+  // around by restarting the recognizer.
+  const userStoppedRef = useRef(false)
   const supported = isSpeechRecognitionSupported()
   const t = STRINGS[language]
 
   const stopRecognition = useCallback(() => {
+    userStoppedRef.current = true
     const rec = recognitionRef.current
     if (rec) {
       try {
@@ -101,6 +110,7 @@ export function AssistantPanel({
     if (!supported) return
     setError(null)
     setInterimText('')
+    userStoppedRef.current = false
     const rec = createRecognition(language)
     if (!rec) return
     recognitionRef.current = rec
@@ -111,12 +121,27 @@ export function AssistantPanel({
       setInterimText(i)
     }
     rec.onerror = (event) => {
+      // 'no-speech' fires when there's no audio for a while; with our
+      // auto-restart pattern this is normal so we don't surface it as an
+      // error — the onend handler below will restart the recognizer.
+      if (event.error === 'no-speech' || event.error === 'aborted') return
       setInterimText('')
       setStatus('error')
       setError(`Speech error: ${event.error}`)
     }
     rec.onend = () => {
       setInterimText('')
+      // Chrome's webkitSpeechRecognition stops after ~5–10 s of silence even
+      // when continuous=true. If the user hasn't clicked Stop, kick it off
+      // again so the recording stays alive across natural pauses.
+      if (!userStoppedRef.current) {
+        try {
+          rec.start()
+          return
+        } catch {
+          /* fall through to idle state */
+        }
+      }
       setStatus((s) => (s === 'listening' ? 'idle' : s))
     }
 
@@ -179,9 +204,7 @@ export function AssistantPanel({
         </div>
         <div className="assistant-subtitle">{t.subtitle}</div>
         {msSignedIn && (
-          <div className="assistant-outlook-hint">
-            📅 Outlook Calendar подключён — AI учтёт твои встречи при поиске конфликта
-          </div>
+          <div className="assistant-outlook-hint">{t.outlookHint}</div>
         )}
 
         <div className="assistant-lang-row">
@@ -250,7 +273,14 @@ export function AssistantPanel({
             onClick={submit}
             disabled={status === 'thinking' || !displayText.trim()}
           >
-            {status === 'thinking' ? t.thinking : t.apply}
+            {status === 'thinking' ? (
+              <>
+                <span className="assistant-spinner" aria-hidden />
+                {t.thinking}
+              </>
+            ) : (
+              t.apply
+            )}
           </button>
         </div>
       </div>

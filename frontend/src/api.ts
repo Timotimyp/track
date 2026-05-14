@@ -28,12 +28,30 @@ export interface CreateTaskOptions {
   token?: string | null
 }
 
+/**
+ * The user's IANA timezone (e.g. "Europe/Moscow"). Used so the backend can
+ * give Microsoft Graph a real local time + zone rather than treating the
+ * user's input as UTC (which silently shifted events by 3+ hours).
+ */
+function getBrowserTimezone(): string {
+  try {
+    return Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+  } catch {
+    return 'UTC'
+  }
+}
+
 export const api = {
   listProjects: () => request<Project[]>('/projects'),
   listUsers: () => request<User[]>('/users'),
   listTasks: () => request<Task[]>('/tasks'),
   createTask: (payload: TaskInput, opts: CreateTaskOptions = {}) => {
-    const qs = opts.addToOutlook ? '?add_to_outlook=true' : ''
+    const params = new URLSearchParams()
+    if (opts.addToOutlook) {
+      params.set('add_to_outlook', 'true')
+      params.set('tz', getBrowserTimezone())
+    }
+    const qs = params.toString() ? `?${params.toString()}` : ''
     return request<Task>(`/tasks${qs}`, {
       method: 'POST',
       body: JSON.stringify(payload),
@@ -46,7 +64,7 @@ export const api = {
   askAssistant: (text: string, language: AssistantLanguage, token?: string | null) =>
     request<AssistantResponse>('/assistant', {
       method: 'POST',
-      body: JSON.stringify({ text, language }),
+      body: JSON.stringify({ text, language, tz: getBrowserTimezone() }),
       token,
     }),
 }

@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime, timedelta
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from fastapi import Depends, FastAPI, Header, HTTPException, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -90,11 +91,27 @@ def _extract_bearer(authorization: str | None) -> str | None:
     return None
 
 
+def _resolve_timezone(name: str | None) -> tuple[ZoneInfo, str]:
+    """Return a ZoneInfo and its canonical IANA name for Graph requests.
+
+    Microsoft Graph accepts IANA names like ``Europe/Moscow``. If the caller
+    omits it or supplies something unparseable, we fall back to UTC so we
+    never crash the create flow over a bad ``tz`` query string.
+    """
+    if name:
+        try:
+            return ZoneInfo(name), name
+        except ZoneInfoNotFoundError:
+            pass
+    return ZoneInfo("UTC"), "UTC"
+
+
 @app.post("/api/tasks", response_model=TaskRead, status_code=status.HTTP_201_CREATED)
 async def create_task(
     payload: TaskCreate,
     session: Session = Depends(get_session),
     add_to_outlook: bool = False,
+    tz: str | None = None,
     authorization: str | None = Header(default=None),
 ) -> TaskRead:
     """Create a task; optionally mirror it as an Outlook event if a token is supplied.
@@ -102,9 +119,13 @@ async def create_task(
     `add_to_outlook=true` query parameter combined with a `Authorization:
     Bearer <graph-token>` header makes the backend create a 1-hour event on
     the caller's Outlook calendar (subject = task title, body = task desc).
-    Calendar creation is best-effort: failures are swallowed so the task
-    itself is still saved. On success the response's `outlook_event_id` field
-    carries Graph's event ID so the UI can confirm the sync happened.
+    The optional `tz` query parameter is an IANA timezone (e.g.
+    ``Europe/Moscow``) so the time the user typed is interpreted in their
+    local zone rather than as UTC — without this the event would show up
+    several hours off in Outlook. Calendar creation is best-effort:
+    failures are swallowed so the task itself is still saved. On success the
+    response's `outlook_event_id` field carries Graph's event ID so the UI
+    can confirm the sync happened.
     """
     task = Task(**payload.model_dump())
     session.add(task)
@@ -115,8 +136,11 @@ async def create_task(
     if add_to_outlook and task.due is not None and task.due_time:
         token = _extract_bearer(authorization)
         if token:
+            zone, zone_name = _resolve_timezone(tz)
             start = datetime.combine(
-                task.due, datetime.strptime(task.due_time, "%H:%M").time(), tzinfo=UTC
+                task.due,
+                datetime.strptime(task.due_time, "%H:%M").time(),
+                tzinfo=zone,
             )
             end = start + timedelta(minutes=60)
             event = await create_calendar_event(
@@ -125,6 +149,7 @@ async def create_task(
                 body=task.desc or "",
                 start=start,
                 end=end,
+                time_zone=zone_name,
             )
             if event is not None:
                 outlook_event_id = event.get("id")
@@ -180,7 +205,8 @@ async def assistant(
     The conflict block returned to the frontend lists every offender and a
     few free alternatives.
     """
-    today = datetime.now(UTC).date()
+    zone, _zone_name = _resolve_timezone(request.tz)
+    today = datetime.now(zone).date()
     try:
         response = await interpret_command(request, today=today)
     except AssistantError as exc:

@@ -62,7 +62,10 @@ export function createRecognition(language: AssistantLanguage): BrowserSpeechRec
   if (!Ctor) return null
   const rec = new Ctor()
   rec.lang = language
-  rec.continuous = false
+  // continuous=true keeps the recognizer running through natural pauses, so
+  // mid-sentence silence doesn't end the session. The user explicitly clicks
+  // "Stop" (or closes the modal) to end the recording.
+  rec.continuous = true
   rec.interimResults = true
   return rec
 }

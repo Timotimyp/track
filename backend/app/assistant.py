@@ -32,6 +32,10 @@ def _gemini_url() -> str:
 class AssistantRequest(BaseModel):
     text: str = Field(min_length=1, max_length=2000)
     language: str = "ru-RU"
+    # Optional IANA timezone (e.g. "Europe/Moscow") so the assistant
+    # interprets "today" / "tomorrow" relative to the user's local day, not
+    # the server's UTC day.
+    tz: str | None = None
 
 
 class AssistantTask(BaseModel):
