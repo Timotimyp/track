@@ -13,16 +13,14 @@
  * - We also do NOT rely solely on `useMsal().accounts`. In practice that
  *   array doesn't always propagate into our render cycle in time — there
  *   are timing gaps between MSAL's internal cache and msal-react's React
- *   state, especially right after a popup login. Instead we read the
+ *   state, especially right after a redirect login. Instead we read the
  *   source of truth ourselves (`instance.getActiveAccount()` with a
  *   `getAllAccounts()` fallback) and subscribe to **every** MSAL event so
  *   any cache change triggers a refresh.
  *
- * - The MSAL cache lives in `localStorage` (see `auth.ts`). When the auth
- *   flow ends up in a separate tab (popup blocked / redirect fallback),
- *   that tab writes the account into localStorage. We listen for
- *   `storage` events and `visibilitychange` so the original tab picks up
- *   the new login without a manual reload.
+ * - The MSAL cache lives in `sessionStorage` (see `auth.ts` for the
+ *   reasoning). sessionStorage is per-tab, so we don't bother with a
+ *   cross-tab `storage` listener — there is no cross-tab anyway.
  */
 import {
   EventType,
@@ -36,7 +34,6 @@ import {
   acquireGraphToken,
   GRAPH_SCOPES,
   isAzureConfigured,
-  MSAL_ACCOUNT_KEYS_STORAGE_KEY,
   msalInstance,
 } from './auth'
 
@@ -117,21 +114,16 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
       setAccount(pickAccount())
     })
 
-    // Cross-tab sync: when another tab writes MSAL's account cache, refresh.
-    function onStorage(e: StorageEvent) {
-      if (!e.key || e.key.startsWith('msal.') || e.key === MSAL_ACCOUNT_KEYS_STORAGE_KEY) {
-        setAccount(pickAccount())
-      }
-    }
+    // When the tab is brought back into focus (e.g. user returned from
+    // login.microsoftonline.com in a separate tab) recheck whether MSAL
+    // has an account so the UI updates without a manual reload.
     function onVisibilityChange() {
       if (document.visibilityState === 'visible') setAccount(pickAccount())
     }
-    window.addEventListener('storage', onStorage)
     document.addEventListener('visibilitychange', onVisibilityChange)
 
     return () => {
       if (callbackId) instance.removeEventCallback(callbackId)
-      window.removeEventListener('storage', onStorage)
       document.removeEventListener('visibilitychange', onVisibilityChange)
     }
   }, [enabled, instance])

@@ -12,6 +12,21 @@ if (msalInstance) {
   // login response that may be present in the URL after returning from
   // login.microsoftonline.com.
   const instance = msalInstance
+  // Print a one-line summary of what auth state the browser is carrying
+  // into this page load. Lets us tell at a glance whether a missing
+  // username after F5 is "the cache was cleared" vs "the cache is there
+  // but MSAL refused to read it".
+  try {
+    const sessKeys = Object.keys(sessionStorage).filter((k) => k.startsWith('msal'))
+    const localKeys = Object.keys(localStorage).filter((k) => k.startsWith('msal'))
+    console.log('[ms-auth] pre-init storage:', {
+      sessionStorageMsalKeys: sessKeys,
+      localStorageMsalKeys: localKeys,
+      href: window.location.href,
+    })
+  } catch (e) {
+    console.warn('[ms-auth] storage inspection failed', e)
+  }
   instance
     .initialize()
     .then(() => instance.handleRedirectPromise())

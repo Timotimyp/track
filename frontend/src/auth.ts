@@ -58,16 +58,26 @@ export function buildMsalConfig(): Configuration | null {
       postLogoutRedirectUri: window.location.origin,
     },
     cache: {
-      // localStorage so that if the auth flow ends up in a new tab
-      // (popup blocked, redirect fallback, etc.) the original tab also
-      // sees the freshly-signed-in account and can update its UI via the
-      // `storage` event — see `useMicrosoftAuth` for the listener.
-      cacheLocation: 'localStorage',
+      // sessionStorage so the signed-in account survives F5 / Cmd+R but
+      // not browser/tab close. We tried `localStorage` first, but MSAL 4+
+      // encrypts the cached account with an AES key it keeps in a session
+      // cookie (`msal.cache.encryption`, Secure + SameSite=None). On
+      // `http://localhost` that cookie is not always persisted (and
+      // strict cookie/privacy settings can drop it across navigations
+      // too), and when the encrypted blob can't be decrypted MSAL purges
+      // the account from its cache — which surfaced as "login disappears
+      // on refresh". sessionStorage stores the account in plaintext and
+      // is read directly by MSAL on init, with no cookie dependency.
+      cacheLocation: 'sessionStorage',
+      // We don't need the encryption cookie at all, but keep its Secure
+      // flag off so anything else MSAL writes to cookies works on http
+      // localhost without silent drops.
+      secureCookies: false,
     },
   }
 }
 
-/** localStorage key that MSAL writes when its account cache changes. */
+/** Storage key that MSAL writes when its account cache changes. */
 export const MSAL_ACCOUNT_KEYS_STORAGE_KEY = 'msal.account.keys'
 
 export const msalInstance: PublicClientApplication | null = (() => {
