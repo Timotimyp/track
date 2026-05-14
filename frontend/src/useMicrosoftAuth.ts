@@ -34,8 +34,7 @@ import { useMsal } from '@azure/msal-react'
 import { useCallback, useEffect, useState } from 'react'
 import {
   acquireGraphToken,
-  GRAPH_READ_SCOPES,
-  GRAPH_WRITE_SCOPES,
+  GRAPH_SCOPES,
   isAzureConfigured,
   MSAL_ACCOUNT_KEYS_STORAGE_KEY,
   msalInstance,
@@ -84,11 +83,22 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
     }
 
     // Make sure the picked account is also "active" so silent token acquisition
-    // works without prompting the user.
+    // works without prompting the user. Also write it back into our React
+    // state — if pickInitialAccount returned null at useState() time (rare
+    // race where MSAL hadn't hydrated yet) the lazy state would be stale
+    // without this nudge.
     const initial = pickAccount()
     if (initial && !instance.getActiveAccount()) {
       instance.setActiveAccount(initial)
     }
+    // We deliberately resync React state to MSAL's external cache on mount.
+    // The lazy useState() initializer also reads from MSAL, but in rare races
+    // (StrictMode double-mount, MSAL.initialize() finishing between the two)
+    // the React state can lag — this catches it. The rule warns about
+    // cascading renders, which we don't incur here because setAccount no-ops
+    // when the value is the same reference.
+    // eslint-disable-next-line react-hooks/set-state-in-effect
+    setAccount(initial)
 
     const callbackId = instance.addEventCallback((event: EventMessage) => {
       console.log('[ms-auth] MSAL event:', event.eventType)
@@ -137,7 +147,7 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
         cancelled = true
       }
     }
-    acquireGraphToken(account, GRAPH_READ_SCOPES).then((t) => {
+    acquireGraphToken(account, GRAPH_SCOPES).then((t) => {
       if (!cancelled) setToken(t)
     })
     return () => {
@@ -147,13 +157,13 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
 
   const signIn = useCallback(async () => {
     if (!enabled) return
-    console.log('[ms-auth] starting loginRedirect')
+    console.log('[ms-auth] starting loginRedirect with scopes', GRAPH_SCOPES)
     try {
       // loginRedirect navigates the current tab to login.microsoftonline.com
       // and back, so we never have to worry about cross-tab popups or browser
       // popup blockers — by the time main.tsx re-runs handleRedirectPromise(),
       // the account is already in MSAL's localStorage cache.
-      await instance.loginRedirect({ scopes: GRAPH_READ_SCOPES })
+      await instance.loginRedirect({ scopes: GRAPH_SCOPES })
     } catch (err) {
       console.error('[ms-auth] Microsoft sign-in failed', err)
     }
@@ -172,12 +182,9 @@ export function useMicrosoftAuth(): MicrosoftAuthState {
   }, [enabled, instance])
 
   const getToken = useCallback(
-    async (scopes: string[] = GRAPH_READ_SCOPES) => {
+    async (scopes: string[] = GRAPH_SCOPES) => {
       if (!enabled || !account) return null
-      if (scopes === GRAPH_READ_SCOPES && token) return token
-      // Keep GRAPH_WRITE_SCOPES referenced so the export isn't tree-shaken
-      // away when the consumer asks for the write scope.
-      void GRAPH_WRITE_SCOPES
+      if (scopes === GRAPH_SCOPES && token) return token
       return acquireGraphToken(account, scopes)
     },
     [enabled, account, token],

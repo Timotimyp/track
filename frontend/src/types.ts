@@ -15,9 +15,18 @@ export interface Task {
   proj: string
   created_at: string
   updated_at: string
+  /**
+   * Set only on the response of POST /api/tasks?add_to_outlook=true if
+   * Graph successfully created the Outlook event. Used by the toast in
+   * App.tsx to confirm the calendar sync.
+   */
+  outlook_event_id?: string | null
 }
 
-export type TaskInput = Omit<Task, 'id' | 'created_at' | 'updated_at'>
+export type TaskInput = Omit<
+  Task,
+  'id' | 'created_at' | 'updated_at' | 'outlook_event_id'
+>
 
 export interface Project {
   name: string

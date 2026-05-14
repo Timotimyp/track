@@ -96,20 +96,22 @@ async def create_task(
     session: Session = Depends(get_session),
     add_to_outlook: bool = False,
     authorization: str | None = Header(default=None),
-) -> Task:
+) -> TaskRead:
     """Create a task; optionally mirror it as an Outlook event if a token is supplied.
 
     `add_to_outlook=true` query parameter combined with a `Authorization:
     Bearer <graph-token>` header makes the backend create a 1-hour event on
     the caller's Outlook calendar (subject = task title, body = task desc).
     Calendar creation is best-effort: failures are swallowed so the task
-    itself is still saved.
+    itself is still saved. On success the response's `outlook_event_id` field
+    carries Graph's event ID so the UI can confirm the sync happened.
     """
     task = Task(**payload.model_dump())
     session.add(task)
     session.commit()
     session.refresh(task)
 
+    outlook_event_id: str | None = None
     if add_to_outlook and task.due is not None and task.due_time:
         token = _extract_bearer(authorization)
         if token:
@@ -117,14 +119,17 @@ async def create_task(
                 task.due, datetime.strptime(task.due_time, "%H:%M").time(), tzinfo=UTC
             )
             end = start + timedelta(minutes=60)
-            await create_calendar_event(
+            event = await create_calendar_event(
                 token,
                 subject=task.title,
                 body=task.desc or "",
                 start=start,
                 end=end,
             )
-    return task
+            if event is not None:
+                outlook_event_id = event.get("id")
+
+    return TaskRead(**task.model_dump(), outlook_event_id=outlook_event_id)
 
 
 @app.get("/api/tasks/{task_id}", response_model=TaskRead)

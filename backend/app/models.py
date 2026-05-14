@@ -91,6 +91,9 @@ class TaskRead(BaseModel):
     proj: str
     created_at: datetime
     updated_at: datetime
+    # Populated when POST /api/tasks?add_to_outlook=true was successful.
+    # Not stored in DB; only returned on the response.
+    outlook_event_id: str | None = None
 
 
 class Project(BaseModel):

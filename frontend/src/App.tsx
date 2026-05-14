@@ -1,6 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { api } from './api'
-import { GRAPH_WRITE_SCOPES } from './auth'
 import { useMicrosoftAuth } from './useMicrosoftAuth'
 import { AssistantPanel } from './components/AssistantPanel'
 import { Dashboard } from './components/Dashboard'
@@ -166,16 +165,25 @@ function App() {
         setTasks((prev) => prev.map((t) => (t.id === id ? updated : t)))
         showToast('Task updated!')
       } else {
-        let token: string | null = null
-        if (opts.addToOutlook && ms.isSignedIn) {
-          token = await ms.getToken(GRAPH_WRITE_SCOPES)
-        }
+        // The login flow already requested Calendars.ReadWrite, so the cached
+        // token has write access. No additional consent popup needed.
+        const token =
+          opts.addToOutlook && ms.isSignedIn ? await ms.getToken() : null
         const created = await api.createTask(payload, {
           addToOutlook: opts.addToOutlook,
           token,
         })
         setTasks((prev) => [...prev, created])
-        showToast(opts.addToOutlook ? 'Task added & sent to Outlook!' : 'Task added!')
+        if (opts.addToOutlook) {
+          showToast(
+            created.outlook_event_id
+              ? 'Task added & sent to Outlook!'
+              : 'Task added (Outlook sync failed \u2014 see backend logs)',
+            created.outlook_event_id ? 'success' : 'error',
+          )
+        } else {
+          showToast('Task added!')
+        }
       }
       setModal(null)
     } catch (err) {

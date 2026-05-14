@@ -8,17 +8,20 @@
  *   `VITE_AZURE_TENANT_ID`. When either is missing the app behaves exactly
  *   like before (no Sign in button, no calendar integration).
  *
- * Scopes:
- *   - `User.Read`        — read the signed-in user's profile (used for the
- *                          avatar/name in the topbar).
- *   - `Calendars.Read`   — read the user's Outlook calendar to detect
- *                          conflicts when the AI suggests a slot.
- *   - `Calendars.ReadWrite` — only requested when the user opts into
- *                          "Also add to my Outlook" in the task modal; until
- *                          they tick the box we stick with the read-only
- *                          scope so consent screens stay minimal.
+ * Scopes (requested up front so users never see a second consent popup
+ * after login):
+ *   - `User.Read`           — read the signed-in user's profile (used for
+ *                             the name in the topbar).
+ *   - `Calendars.ReadWrite` — read AND write the user's Outlook calendar.
+ *                             Read is needed for conflict detection; write
+ *                             is needed when the user ticks
+ *                             "Also add to my Outlook" in the task modal.
+ *                             ReadWrite implies Read, so we don't need to
+ *                             list both — listing both would only add
+ *                             noise to the consent screen.
  */
 import {
+  InteractionRequiredAuthError,
   PublicClientApplication,
   type AccountInfo,
   type Configuration,
@@ -29,8 +32,17 @@ export const AZURE_CLIENT_ID = import.meta.env.VITE_AZURE_CLIENT_ID as string | 
 export const AZURE_TENANT_ID =
   (import.meta.env.VITE_AZURE_TENANT_ID as string | undefined) || 'common'
 
-export const GRAPH_READ_SCOPES = ['User.Read', 'Calendars.Read']
-export const GRAPH_WRITE_SCOPES = ['User.Read', 'Calendars.ReadWrite']
+/**
+ * One set of scopes covers both reading conflicts and writing new events.
+ * Microsoft treats `Calendars.ReadWrite` as a superset of `Calendars.Read`,
+ * so a single consent is enough — no incremental popup later.
+ */
+export const GRAPH_SCOPES = ['User.Read', 'Calendars.ReadWrite']
+
+/** @deprecated kept for backwards compat — use GRAPH_SCOPES. */
+export const GRAPH_READ_SCOPES = GRAPH_SCOPES
+/** @deprecated kept for backwards compat — use GRAPH_SCOPES. */
+export const GRAPH_WRITE_SCOPES = GRAPH_SCOPES
 
 export function isAzureConfigured(): boolean {
   return !!AZURE_CLIENT_ID && AZURE_CLIENT_ID.length > 0
@@ -63,22 +75,39 @@ export const msalInstance: PublicClientApplication | null = (() => {
   return cfg ? new PublicClientApplication(cfg) : null
 })()
 
-/** Acquire a Graph access token silently (falls back to popup on first call). */
+/**
+ * Acquire a Graph access token silently.
+ *
+ * Because we request the full set of scopes (User.Read + Calendars.ReadWrite)
+ * at login time, this should always succeed silently — the cached refresh
+ * token already covers everything we'll ever need.
+ *
+ * If silent acquisition fails AND the failure is "the user must interact"
+ * (e.g. they revoked consent in the Microsoft portal, or the cached refresh
+ * token expired), we navigate to `loginRedirect` so the user re-consents.
+ * For any other failure (transient network, etc.) we return null and let the
+ * caller surface a toast.
+ */
 export async function acquireGraphToken(
   account: AccountInfo,
-  scopes: string[] = GRAPH_READ_SCOPES,
+  scopes: string[] = GRAPH_SCOPES,
 ): Promise<string | null> {
   if (!msalInstance) return null
   const request: SilentRequest = { account, scopes }
   try {
     const result = await msalInstance.acquireTokenSilent(request)
     return result.accessToken
-  } catch {
-    try {
-      const result = await msalInstance.acquireTokenPopup({ scopes })
-      return result.accessToken
-    } catch {
+  } catch (err) {
+    if (err instanceof InteractionRequiredAuthError) {
+      console.warn('[ms-auth] silent token requires interaction, redirecting', err)
+      try {
+        await msalInstance.loginRedirect({ scopes })
+      } catch (loginErr) {
+        console.error('[ms-auth] loginRedirect fallback also failed', loginErr)
+      }
       return null
     }
+    console.warn('[ms-auth] acquireTokenSilent failed (non-interactive)', err)
+    return null
   }
 }

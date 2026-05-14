@@ -11,10 +11,13 @@ frontend (MSAL.js) is responsible for renewing it.
 """
 from __future__ import annotations
 
+import logging
 from datetime import UTC, datetime, timedelta
 
 import httpx
 from pydantic import BaseModel
+
+log = logging.getLogger(__name__)
 
 GRAPH_BASE = "https://graph.microsoft.com/v1.0"
 GRAPH_TIMEOUT = 10.0
@@ -71,9 +74,13 @@ async def fetch_calendar_view(
             resp = await client.get(
                 f"{GRAPH_BASE}/me/calendarView", params=params, headers=headers
             )
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
+        log.warning("Graph calendarView request failed: %s", exc)
         return []
     if resp.status_code != 200:
+        log.warning(
+            "Graph calendarView returned %s: %s", resp.status_code, resp.text[:500]
+        )
         return []
     payload = resp.json()
     out: list[GraphEvent] = []
@@ -124,10 +131,14 @@ async def create_calendar_event(
             resp = await client.post(
                 f"{GRAPH_BASE}/me/events", json=payload, headers=headers
             )
-    except httpx.HTTPError:
+    except httpx.HTTPError as exc:
+        log.warning("Graph POST /me/events request failed: %s", exc)
         return None
     if resp.status_code in (200, 201):
         return resp.json()
+    log.warning(
+        "Graph POST /me/events returned %s: %s", resp.status_code, resp.text[:500]
+    )
     return None
 
 
